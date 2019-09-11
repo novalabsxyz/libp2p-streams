@@ -187,6 +187,9 @@ handle_info(_, {'EXIT', WorkerPid, Reason}, State=#state{}) ->
         false ->
             {noreply, State}
     end;
+handle_info(_, {stream_identify, Identify}, State=#state{}) ->
+    libp2p_stream_transport:update(stream_identify, Identify),
+    {noreply, State};
 
 handle_info(Kind, Msg, State=#state{}) ->
     lager:warning("Unhandled ~p info ~p", [Kind, Msg]),
@@ -203,8 +206,10 @@ start_worker(WorkerKey={Kind, StreamID}, Opts, State=#state{worker_opts=WorkerOp
                                                             worker_pids=WorkerPids,
                                                             count_received_workers=CountReceived}) ->
     WorkerOpts = maps:merge(WorkerOpts0#{stream_id => StreamID,
-                                         addr_info => libp2p_stream_transport:stream_addr_info(),
-                                         muxer => self()},
+                                         addr_info => libp2p_stream_transport:get(stream_addr_info),
+                                         muxer => self(),
+                                         stream_identify => libp2p_stream_transport:get(stream_identify)
+                                        },
                             Opts),
     case libp2p_stream_mplex_worker:start_link(Kind, WorkerOpts) of
         {ok, WorkerPid} ->

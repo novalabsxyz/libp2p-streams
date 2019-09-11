@@ -7,7 +7,7 @@
 
 -type action() ::
         {send, Data::binary()} |
-        {swap, Module::atom(), ModState::any()} |
+        {swap, Module::atom(), ModOpts::map()} |
         {packet_spec, libp2p_packet:spec()} |
         {active, active()} |
         {reply, To::term(), Reply::term()} |

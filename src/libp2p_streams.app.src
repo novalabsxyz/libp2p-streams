@@ -21,7 +21,8 @@
                   stdlib,
                   lager,
                   acceptor_pool,
-                  multiaddr
+                  multiaddr,
+                  libp2p_crypto
                  ]},
   {env,[]},
 

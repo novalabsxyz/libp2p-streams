@@ -64,12 +64,9 @@
          enter_loop/3,
          command/2,
          %% in-stream APIs
-         stream_stack_update/2,
-         stream_stack_replace/3,
-         stream_addr_info/0,
-         stream_addr_info_update/1,
-         stream_muxer/0,
-         stream_muxer_update/1
+         update/2,
+         replace/2,
+         get/1
          ]).
 %% gen_server
 -export([init/1,
@@ -121,31 +118,32 @@ command(Pid, Cmd) ->
 %% API for use inside streams
 %%
 
-stream_stack_update(Mod, NewKind) ->
-    Stack = lists:keystore(Mod, 1, stream_stack_get(), {Mod, NewKind}),
-    stream_stack_put(Stack).
+update(K=stream_stack, {Mod, NewKind}) ->
+    Stack = lists:keystore(Mod, 1, ?MODULE:get(K), {Mod, NewKind}),
+    erlang:put(K, Stack);
+update(K=stream_addr_info, {LocalAddr, RemoteAddr}) when is_list(LocalAddr), is_list(RemoteAddr) ->
+    erlang:put(K, {LocalAddr, RemoteAddr});
+update(K=stream_muxer, Pid) when is_pid(Pid) ->
+    erlang:put(K, Pid);
+update(K=stream_identify, Identify) ->
+    erlang:put(K, Identify).
 
-stream_stack_replace(Mod, NewMod, NewKind) ->
-    Stack = lists:keyreplace(Mod, 1, stream_stack_get(), {NewMod, NewKind}),
-    stream_stack_put(Stack).
+get(K=stream_stack) ->
+    case erlang:get(K) of
+        undefined -> [];
+        Other -> Other
+    end;
+get(K) ->
+    erlang:get(K).
 
-stream_addr_info() ->
-    erlang:get(stream_addr_info).
-
-stream_addr_info_update({LocalAddr, RemoteAddr}) when is_list(LocalAddr), is_list(RemoteAddr) ->
-    erlang:put(stream_addr_info, {LocalAddr, RemoteAddr}).
-
-
-stream_muxer() ->
-    erlang:get(stream_muxer).
-
-stream_muxer_update(Pid) when is_pid(Pid) ->
-    erlang:put(stream_muxer, Pid).
+replace(K=stream_stack, {OldMod, {Mod, NewKind}}) ->
+    Stack = lists:keyreplace(OldMod, 1, ?MODULE:get(K), {Mod, NewKind}),
+    erlang:put(K, Stack).
 
 -spec init({atom(), libp2p_stream:kind(), Opts::map()}) -> {stop, Reason::any()} |
                                                            {ok, #state{}}.
 init({Mod, Kind, Opts}) ->
-    stream_stack_update(Mod, Kind),
+    ?MODULE:update(stream_stack, {Mod, Kind}),
     State = #state{mod=Mod, mod_state=undefined},
     Result = Mod:init(Kind, Opts),
     handle_init_result(Result, State).
@@ -370,16 +368,6 @@ handle_action(Action, State) ->
 %%
 %% Utils
 %%
-
-stream_stack_get() ->
-    case erlang:get(stream_stack) of
-        undefined -> [];
-        Other -> Other
-    end.
-
-stream_stack_put(Stack) ->
-    erlang:put(stream_stack, Stack),
-    ok.
 
 mk_async_sender(SendFun) ->
     Parent = self(),

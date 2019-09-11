@@ -122,6 +122,10 @@ acceptor_continue(_PeerName, Sock, Opts) ->
 acceptor_terminate(_Reason, _) ->
     exit(normal).
 
+
+%% libp2p_stream_transport
+%%
+
 start_link(Kind, Opts) ->
     libp2p_stream_transport:start_link(?MODULE, Kind, Opts).
 
@@ -136,13 +140,13 @@ init(Kind, Opts=#{handlers := Handlers}) ->
     init(Kind, maps:remove(handlers, NewOpts));
 init(Kind, Opts=#{mod := Mod}) ->
     erlang:process_flag(trap_exit, true),
-    libp2p_stream_transport:stream_stack_update(Mod, Kind),
+    libp2p_stream_transport:update(stream_stack, {Mod, Kind}),
     self() ! {init_mod, Opts},
     {ok, #state{mod=Mod, kind=Kind}}.
 
 
 handle_call(stream_addr_info, _From, State=#state{}) ->
-    {reply, {ok, libp2p_stream_transport:stream_addr_info()}, State};
+    {reply, {ok, libp2p_stream_transport:get(stream_addr_info)}, State};
 
 handle_call(Cmd, From, State=#state{mod=Mod, mod_state=ModState, kind=Kind}) ->
     case erlang:function_exported(Mod, handle_command, 4) of
@@ -173,7 +177,7 @@ handle_info({init_mod, Opts=#{ socket := Sock }}, State=#state{mod=Mod, kind=Kin
             maybe_notify_connect_handler({error, Error}, Opts),
             {stop, normal, State};
         {ok, AddrInfo} ->
-            libp2p_stream_transport:stream_addr_info_update(AddrInfo),
+            libp2p_stream_transport:update(stream_addr_info, AddrInfo),
             case Kind of
                 server -> ok;
                 client ->
@@ -298,7 +302,7 @@ handle_action({active, Active}, State=#state{}) ->
     SetSocketActive = fun(V) when V == State#state.socket_active ->
                               V;
                          (V) ->
-                              ok = inet:setopts(State#state.socket, [{active, V}]),
+                              _ = inet:setopts(State#state.socket, [{active, V}]),
                               V
                       end,
     case Active of
@@ -318,19 +322,19 @@ handle_action({active, Active}, State=#state{}) ->
         false ->
             %% Turn of active mode for at this layer means turning it
             %% off all the way down.
-            ok = inet:setopts(State#state.socket, [{active, false}]),
+            _ = inet:setopts(State#state.socket, [{active, false}]),
             {action, {active, false}, State#state{active=Active,
                                                  socket_active=SetSocketActive(false)}}
     end;
 handle_action(swap_kind, State=#state{kind=server}) ->
-    libp2p_stream_transport:stream_stack_update(State#state.mod, client),
+    libp2p_stream_transport:update(stream_stack, {State#state.mod, client}),
     {ok, State#state{kind=client}};
 handle_action(swap_kind, State=#state{kind=client}) ->
-    libp2p_stream_transport:stream_stack_update(State#state.mod, server),
+    libp2p_stream_transport:update(stream_stack, {State#state.mod, server}),
     {ok, State#state{kind=server}};
 handle_action({swap, Mod, ModOpts}, State=#state{}) ->
     %% In a swap we ignore any furhter actions in the action list and
-    libp2p_stream_transport:stream_stack_replace(State#state.mod, Mod, State#state.kind),
+    libp2p_stream_transport:replace(stream_stack, {State#state.mod, {Mod, State#state.kind}}),
     case Mod:init(State#state.kind, maps:merge(ModOpts, State#state.mod_base_opts)) of
         {ok, ModState, Actions} ->
             {replace, Actions, State#state{mod_state=ModState, mod=Mod}};
