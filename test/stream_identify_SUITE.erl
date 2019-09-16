@@ -52,12 +52,12 @@ dial_test(Config) ->
 
     %% Wait for the identify to make it to the muxer
     ok = test_util:wait_until(fun() ->
-                                      stream_identify(CPid) /= undefined
+                                      test_util:get_md(identify, CPid) /= undefined
                               end),
 
     %% Check that the observe address of the client as returned by the
     %% server matches our local address in addr_info
-    Identify = stream_identify(CPid),
+    Identify = test_util:get_md(identify, CPid),
     {ok, {LocalAddr, _}} = libp2p_stream_transport:command(CPid, stream_addr_info),
     ?assertEqual(LocalAddr, libp2p_identify:observed_addr(Identify)),
 
@@ -68,18 +68,6 @@ dial_test(Config) ->
 %% Utilities
 %%
 
-stream_identify(Pid) ->
-    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
-    case lists:keyfind(stream_identify, 1, PDict) of
-        false -> undefined;
-        {stream_identify, Info} -> Info
-    end.
-
-stream_stack(Pid) ->
-    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
-    {stream_stack, Stack} = lists:keyfind(stream_stack, 1, PDict),
-    Stack.
-
 meck_stream(Name) ->
     meck:new(Name, [non_strict]),
     meck:expect(Name, init,
@@ -88,9 +76,9 @@ meck_stream(Name) ->
                    end),
     meck:expect(Name, handle_command,
                 fun(_Kind, stream_identify, _From, State) ->
-                        {reply, {ok, libp2p_stream_transport:get(stream_identify)}, State};
+                        {reply, {ok, libp2p_stream_md:get(identify)}, State};
                    (_Kind, stream_addr_info, _From, State) ->
-                        {reply, {ok, libp2p_stream_transport:get(stream_addr_info)}, State}
+                        {reply, {ok, libp2p_stream_md:get(addr_info)}, State}
                 end),
     ok.
 

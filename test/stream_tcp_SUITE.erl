@@ -93,8 +93,8 @@ init_ok_test(Config) ->
     send_packet(CSock, <<"hello">>),
     ?assertEqual(<<"hello">>, receive_packet(CSock)),
 
-    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, server}], stream_stack(Pid)),
-    ?assertMatch({_, _}, stream_addr_info(Pid)),
+    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, server}], test_util:get_md(stack, Pid)),
+    ?assertMatch({_, _}, test_util:get_md(addr_info, Pid)),
 
     ok.
 
@@ -221,10 +221,10 @@ command_test(Config) ->
     %% Swap kind to client and back
     ?assertEqual(ok, libp2p_stream_tcp:command(Pid, swap_kind)),
     ?assertEqual(client, libp2p_stream_tcp:command(Pid, kind)),
-    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, client}], stream_stack(Pid)),
+    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, client}], test_util:get_md(stack, Pid)),
     ?assertEqual(ok, libp2p_stream_tcp:command(Pid, swap_kind)),
     ?assertEqual(server, libp2p_stream_tcp:command(Pid, kind)),
-    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, server}], stream_stack(Pid)),
+    ?assertEqual([{libp2p_stream_tcp, server}, {test_stream, server}], test_util:get_md(stack, Pid)),
 
     ok.
 
@@ -301,7 +301,7 @@ connect_test(_Config) ->
                     ct:fail(timout_no_connect)
             end,
 
-    ?assertEqual(libp2p_stream_tcp:addr_info(Pid), {ok, stream_addr_info(Pid)}),
+    ?assertEqual(libp2p_stream_tcp:addr_info(Pid), {ok, test_util:get_md(addr_info, Pid)}),
     gen_tcp:close(SSock),
     ?assert(test_util:pid_should_die(Pid)),
     ?assertEqual({error, einval}, libp2p_stream_tcp:addr_info(SSock)),
@@ -339,16 +339,6 @@ connect_test(_Config) ->
 %%
 %% Utilities
 %%
-
-stream_stack(Pid) ->
-    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
-    {stream_stack, Stack} = lists:keyfind(stream_stack, 1, PDict),
-    Stack.
-
-stream_addr_info(Pid) ->
-    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
-    {stream_addr_info, Info} = lists:keyfind(stream_addr_info, 1, PDict),
-    Info.
 
 encode_packet(Data) ->
     DataSize = byte_size(Data),

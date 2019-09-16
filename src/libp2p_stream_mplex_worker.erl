@@ -58,13 +58,10 @@ start_link(Kind, Opts) ->
 
 init(Kind, Opts=#{stream_id := StreamID,
                   mod := Mod,
-                  addr_info := AddrInfo,
-                  muxer := Muxer,
-                  send_fn := SendFun}) ->
-    libp2p_stream_transport:update(stream_stack, {Mod, Kind}),
-    libp2p_stream_transport:update(stream_addr_info, AddrInfo),
-    libp2p_stream_transport:update(stream_muxer, Muxer),
-    libp2p_stream_transport:update(stream_identify, maps:get(stream_identify, Opts, undefined)),
+                  send_fn := SendFun,
+                  stream_md := StreamMD
+                 }) ->
+    libp2p_stream_md:md(StreamMD),
     ModOpts = maps:get(mod_opts, Opts, #{}),
     ModBaseOpts = #{
                     send_fn => SendFun
@@ -214,14 +211,14 @@ handle_action({active, Active}, State=#state{}) ->
             {action, {active, false}, State#state{active=Active}}
     end;
 handle_action(swap_kind, State=#state{kind=server}) ->
-    libp2p_stream_transport:update(stream_stack, {State#state.mod, client}),
+    libp2p_stream_md:update({stack, {State#state.mod, client}}),
     {ok, State#state{kind=client}};
 handle_action(swap_kind, State=#state{kind=client}) ->
-    libp2p_stream_transport:update(stream_stack, {State#state.mod, server}),
+    libp2p_stream_md:update({stack, {State#state.mod, server}}),
     {ok, State#state{kind=server}};
 handle_action({swap, Mod, ModOpts}, State=#state{}) ->
     %% In a swap we ignore any furhter actions in the action list
-    libp2p_stream_transport:replace(stream_stack, {State#state.mod, {Mod, State#state.kind}}),
+    libp2p_stream_md:update({stack, {State#state.mod, {Mod, State#state.kind}}}),
     case Mod:init(State#state.kind, maps:merge(ModOpts, State#state.mod_base_opts)) of
         {ok, ModState, Actions} ->
             {replace, Actions, State#state{mod_state=ModState, mod=Mod}};

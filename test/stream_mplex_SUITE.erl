@@ -89,7 +89,7 @@ open_test(Config) ->
     SPid ! {send, <<"world">>},
     ?assertEqual(<<"world">>, stream_cmd(CPid, recv)),
 
-    ?assertEqual(CMPid, stream_muxer(CPid)),
+    ?assertEqual(CMPid, test_util:get_md(muxer, CPid)),
     ok.
 
 
@@ -192,11 +192,6 @@ max_received_test(Config) ->
 %%
 %% Utilities
 %%
-
-stream_muxer(Pid) ->
-    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
-    {stream_muxer, Info} = lists:keyfind(stream_muxer, 1, PDict),
-    Info.
 
 close_state_should_be(Pid, CloseState) ->
     ok == test_util:wait_until(fun() ->

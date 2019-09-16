@@ -62,11 +62,7 @@
 %% API
 -export([start_link/3,
          enter_loop/3,
-         command/2,
-         %% in-stream APIs
-         update/2,
-         replace/2,
-         get/1
+         command/2
          ]).
 %% gen_server
 -export([init/1,
@@ -118,32 +114,10 @@ command(Pid, Cmd) ->
 %% API for use inside streams
 %%
 
-update(K=stream_stack, {Mod, NewKind}) ->
-    Stack = lists:keystore(Mod, 1, ?MODULE:get(K), {Mod, NewKind}),
-    erlang:put(K, Stack);
-update(K=stream_addr_info, {LocalAddr, RemoteAddr}) when is_list(LocalAddr), is_list(RemoteAddr) ->
-    erlang:put(K, {LocalAddr, RemoteAddr});
-update(K=stream_muxer, Pid) when is_pid(Pid) ->
-    erlang:put(K, Pid);
-update(K=stream_identify, Identify) ->
-    erlang:put(K, Identify).
-
-get(K=stream_stack) ->
-    case erlang:get(K) of
-        undefined -> [];
-        Other -> Other
-    end;
-get(K) ->
-    erlang:get(K).
-
-replace(K=stream_stack, {OldMod, {Mod, NewKind}}) ->
-    Stack = lists:keyreplace(OldMod, 1, ?MODULE:get(K), {Mod, NewKind}),
-    erlang:put(K, Stack).
-
 -spec init({atom(), libp2p_stream:kind(), Opts::map()}) -> {stop, Reason::any()} |
                                                            {ok, #state{}}.
 init({Mod, Kind, Opts}) ->
-    ?MODULE:update(stream_stack, {Mod, Kind}),
+    libp2p_stream_md:update({stack, {Mod, Kind}}),
     State = #state{mod=Mod, mod_state=undefined},
     Result = Mod:init(Kind, Opts),
     handle_init_result(Result, State).

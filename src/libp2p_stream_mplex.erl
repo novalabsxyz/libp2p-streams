@@ -188,7 +188,7 @@ handle_info(_, {'EXIT', WorkerPid, Reason}, State=#state{}) ->
             {noreply, State}
     end;
 handle_info(_, {stream_identify, Identify}, State=#state{}) ->
-    libp2p_stream_transport:update(stream_identify, Identify),
+    libp2p_stream_md:update({identify, Identify}),
     {noreply, State};
 
 handle_info(Kind, Msg, State=#state{}) ->
@@ -205,10 +205,9 @@ start_worker(WorkerKey={Kind, StreamID}, Opts, State=#state{worker_opts=WorkerOp
                                                             workers=Workers,
                                                             worker_pids=WorkerPids,
                                                             count_received_workers=CountReceived}) ->
+    StreamMD = lists:keystore(muxer, 1, libp2p_stream_md:md(), {muxer, self()}),
     WorkerOpts = maps:merge(WorkerOpts0#{stream_id => StreamID,
-                                         addr_info => libp2p_stream_transport:get(stream_addr_info),
-                                         muxer => self(),
-                                         stream_identify => libp2p_stream_transport:get(stream_identify)
+                                         stream_md => StreamMD
                                         },
                             Opts),
     case libp2p_stream_mplex_worker:start_link(Kind, WorkerOpts) of

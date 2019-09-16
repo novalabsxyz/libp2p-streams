@@ -66,8 +66,13 @@ init(server, Opts=#{ pubkey_bin := PubKeyBin, sig_fun := SigFun }) ->
 handle_packet(client, _, Packet, State=#state{}) ->
     case libp2p_identify:decode(Packet)  of
         {ok, Identify} ->
-            libp2p_stream_transport:update(stream_identify, Identify),
-            Muxer = libp2p_stream_transport:get(stream_muxer),
+            LocalP2P = libp2p_crypto:pubkey_bin_to_p2p(State#state.pubkey_bin),
+            RemoteP2P = libp2p_crypto:pubkey_bin_to_p2p(libp2p_identify:pubkey_bin(Identify)),
+            Ident = [{addr_info, {LocalP2P, RemoteP2P}},
+                     {observed_addr, libp2p_identify:observed_addr(Identify)}
+                    ],
+            libp2p_stream_md:update({identify, Ident}),
+            Muxer = libp2p_stream_md:get(muxer),
             Muxer ! {stream_identify, Identify},
             case State#state.handlers of
                 [] ->
@@ -98,7 +103,7 @@ handle_packet(server, _, Packet, State=#state{}) ->
 
 
 handle_info(_Kind, {timeout, identify_timeout}, State=#state{}) ->
-    {_, RemoteAddr} = libp2p_stream_transport:get(stream_addr_info),
+    {_, RemoteAddr} = libp2p_stream_md:get(addr_info),
     lager:notice("Identify ~p timeout with ~p", [_Kind, RemoteAddr]),
     {stop, normal, State};
 
@@ -113,7 +118,7 @@ handle_info(Kind, Msg, State=#state{}) ->
 
 -spec mk_identify(Challenge::binary(), #state{}) -> {ok, libp2p_identify:identify()} | {error, term()}.
 mk_identify(Challenge, State=#state{}) ->
-    {_, RemoteAddr} = libp2p_stream_transport:get(stream_addr_info),
+    {_, RemoteAddr} = libp2p_stream_md:get(addr_info),
     libp2p_identify:from_map(#{pubkey_bin => State#state.pubkey_bin,
                                nonce => Challenge,
                                observed_addr => RemoteAddr},

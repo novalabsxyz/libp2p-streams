@@ -58,6 +58,12 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
             wait_until(Fun, Retry-1, Delay)
     end.
 
+get_md(K, Pid) ->
+    {dictionary, PDict} = erlang:process_info(Pid, dictionary),
+    case lists:keyfind('__libp2p_stream_md', 1, PDict) of
+        false -> [];
+        {_, MD} -> libp2p_stream_md:get(K, MD)
+    end.
 
 -spec rm_rf(file:filename()) -> ok.
 rm_rf(Dir) ->
