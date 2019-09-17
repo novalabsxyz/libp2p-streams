@@ -28,7 +28,7 @@ test:
 	$(REBAR) as test do eunit,ct
 
 ci:
-	$(REBAR) dialyzer && $(REBAR) as test do eunit,ct,cover
+	$(REBAR) dialyzer,xref && $(REBAR) as test do eunit,ct,cover
 	$(REBAR) covertool generate
 	codecov --required -f _build/test/covertool/libp2p.covertool.xml
 
