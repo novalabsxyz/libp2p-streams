@@ -17,20 +17,20 @@
                 pubkey_bin :: libp2p_crypto:pubkey_bin(),
                 sig_fun :: libp2p_crypto:sig_fun(),
                 handlers :: libp2p_stream_multistream:handlers()
-       }).
+               }).
 
 %%
 %% API
 %%
 
-dial(Muxer, Opts = #{ pubkey_bin := _PubKeyBin, sig_fun := _SigFun }) ->
+dial(Muxer, Opts = #{ identify_keys := #{pubkey_bin := _PubKeyBin, sig_fun := _SigFun} }) ->
     libp2p_stream_muxer:dial(Muxer, #{ handlers => [ {?MODULE:protocol_id(), {?MODULE, Opts}} ] }).
 
 
 protocol_id() ->
     <<"/identify/2.0.0">>.
 
-init(client, Opts=#{ pubkey_bin := PubKeyBin, sig_fun := SigFun }) ->
+init(client, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigFun} }) ->
     Challenge = crypto:strong_rand_bytes(20),
     State = #state{pubkey_bin=PubKeyBin,
                    sig_fun=SigFun,
@@ -49,7 +49,7 @@ init(client, Opts=#{ pubkey_bin := PubKeyBin, sig_fun := SigFun }) ->
             lager:warning("Failed to construct identify: ~p", [Error]),
             {stop, {error, Error}}
     end;
-init(server, Opts=#{ pubkey_bin := PubKeyBin, sig_fun := SigFun }) ->
+init(server, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigFun} }) ->
     IdentifyTimeout = maps:get(identify_timeout, Opts, ?DEFAULT_IDENTIFY_TIMEOUT),
     State = #state{
                pubkey_bin=PubKeyBin,
@@ -94,7 +94,8 @@ handle_packet(server, _, Packet, State=#state{}) ->
                     {stop, normal, State,
                      [{send, encode_identify(ResponseIdentify)}]};
                 {error, Error} ->
-                    lager:warning("Failed to construct identify: ~p", [Error])
+                    lager:warning("Failed to construct identify: ~p", [Error]),
+                    {stop, normal, State}
             end;
         {error, Error} ->
             lager:warning("Received invalid identify request: ~p", [Error]),

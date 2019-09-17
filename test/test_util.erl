@@ -4,6 +4,8 @@
 
 -export([setup/0,
          setup_sock_pair/1, teardown_sock_pair/1,
+         setup_mplex_streams/3,
+         mk_identify_keys/0,
          pid_should_die/1, wait_until/1, wait_until/3,
          rm_rf/1, nonl/1]).
 
@@ -31,6 +33,27 @@ setup_sock_pair(Config) ->
         {accepted, SSock} -> SSock
     end,
     [{listen_sock, LSock}, {client_server, {CSock, SSock}} | Config].
+
+setup_mplex_streams(ClientHandlers, ServerHandlers, Config) ->
+    {CSock, SSock} = ?config(client_server, Config),
+
+    %% Server muxer
+    ServerOpts = #{ handlers => ServerHandlers },
+    {ok, SPid} = libp2p_stream_tcp:start_link(server, #{socket => SSock,
+                                                        mod => libp2p_stream_mplex,
+                                                        mod_opts => ServerOpts
+                                                    }),
+    gen_tcp:controlling_process(SSock, SPid),
+
+    %% Client muxer
+    ClientOpts = #{ handlres => ClientHandlers },
+    {ok, CPid} = libp2p_stream_tcp:start_link(client, #{socket => CSock,
+                                                        mod => libp2p_stream_mplex,
+                                                        mod_opts => ClientOpts
+                                                       }),
+    gen_tcp:controlling_process(CSock, CPid),
+    [{stream_client_server, {CPid, SPid}} | Config].
+
 
 teardown_sock_pair(Config) ->
     LSock = ?config(listen_sock, Config),
@@ -64,6 +87,13 @@ get_md(K, Pid) ->
         false -> [];
         {_, MD} -> libp2p_stream_md:get(K, MD)
     end.
+
+mk_identify_keys() ->
+    #{public := PubKey, secret := PrivKey } = libp2p_crypto:generate_keys(ecc_compact),
+    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+    #{pubkey_bin => PubKeyBin, sig_fun => SigFun }.
+
 
 -spec rm_rf(file:filename()) -> ok.
 rm_rf(Dir) ->

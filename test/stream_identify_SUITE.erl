@@ -10,44 +10,20 @@ all() ->
 
 init_per_testcase(_, Config) ->
     test_util:setup(),
-    init_test_streams(test_util:setup_sock_pair(Config)).
+    ClientHandlers = [],
+    ServerHandlers = [{ libp2p_stream_identify:protocol_id(),
+                        {libp2p_stream_identify, #{identify_keys => test_util:mk_identify_keys()}} }],
+    test_util:setup_mplex_streams(ClientHandlers, ServerHandlers, test_util:setup_sock_pair(Config)).
 
 end_per_testcase(_, Config) ->
     test_util:teardown_sock_pair(Config).
-
-
-mk_ident_keys() ->
-    #{public := PubKey, secret := PrivKey } = libp2p_crypto:generate_keys(ecc_compact),
-    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    #{pubkey_bin => PubKeyBin, sig_fun => SigFun }.
-
-init_test_streams(Config) ->
-    {CSock, SSock} = ?config(client_server, Config),
-
-    %% Server muxer
-    ServerOpts = #{ handlers => [{ libp2p_stream_identify:protocol_id(),
-                                   {libp2p_stream_identify, mk_ident_keys() }
-                                 }]},
-    {ok, SPid} = libp2p_stream_tcp:start_link(server, #{socket => SSock,
-                                                        mod => libp2p_stream_mplex,
-                                                        mod_opts => ServerOpts
-                                                    }),
-    gen_tcp:controlling_process(SSock, SPid),
-
-    %% Client muxer
-    {ok, CPid} = libp2p_stream_tcp:start_link(client, #{socket => CSock,
-                                                        mod => libp2p_stream_mplex
-                                                       }),
-    gen_tcp:controlling_process(CSock, CPid),
-    [{stream_client_server, {CPid, SPid}} | Config].
 
 
 
 dial_test(Config) ->
     {CPid, _} = ?config(stream_client_server, Config),
 
-    IdentOpts = mk_ident_keys(),
+    IdentOpts = #{ identify_keys => test_util:mk_identify_keys() },
     libp2p_stream_identify:dial(CPid, IdentOpts),
 
     %% Wait for the identify to make it to the muxer

@@ -1,7 +1,12 @@
 -module(libp2p_stream_md).
 
 -type md_key() :: stack | addr_info | muxer | identify.
--type md_entry() :: {stack, {atom(), client | server}} |
+
+-type stack_kind() :: client | server.
+-type md_entry() :: {stack,
+                     [{Mod::atom(), Kind::stack_kind()}] |
+                     {Mod::atom(), Kind::stack_kind()} |
+                     {OldMod::atom(), {Mod::atom(), Kind::stack_kind()}}} |
                     {addr_info, {Local::string(), Remote::string()}} |
                     {muxer, pid()} |
                     {identify, identify_md()}.
@@ -16,19 +21,22 @@
 
 -define(LIBP2P_STREAM_MD_KEY, '__libp2p_stream_md').
 
--spec update(md_entry()) -> md().
-update({stack, {Mod, NewKind}}) ->
-    Stack = lists:keystore(Mod, 1, ?MODULE:get(stack, md()), {Mod, NewKind}),
+-spec update(md_entry()) -> ok.
+update({stack, {Mod, Kind}}) when is_atom(Kind) ->
+    Stack = lists:keystore(Mod, 1, ?MODULE:get(stack), {Mod, Kind}),
+    update({stack, Stack});
+update({stack, {OldMod, {Mod, Kind}}}) ->
+    Stack = lists:keyreplace(OldMod, 1, ?MODULE:get(stack), {Mod, Kind}),
     update({stack, Stack});
 update({K, V}) ->
     md(lists:keystore(K, 1, md(), {K, V})).
 
 
--spec get(md_key()) -> md_entry() | undefined.
+-spec get(md_key()) -> any().
 get(K) ->
     get(K, md()).
 
--spec get(md_key(), md()) -> md_entry() | undefined.
+-spec get(md_key(), md()) -> any().
 get(stack, MD) ->
     case lists:keyfind(stack, 1, MD) of
         false -> [];
