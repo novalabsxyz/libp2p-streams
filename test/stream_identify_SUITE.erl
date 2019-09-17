@@ -10,10 +10,10 @@ all() ->
 
 init_per_testcase(_, Config) ->
     test_util:setup(),
-    ClientHandlers = [],
-    ServerHandlers = [{ libp2p_stream_identify:protocol_id(),
-                        {libp2p_stream_identify, #{identify_keys => test_util:mk_identify_keys()}} }],
-    test_util:setup_mplex_streams(ClientHandlers, ServerHandlers, test_util:setup_sock_pair(Config)).
+    ClientOpts = #{},
+    ServerIdentOpts = #{identify_keys => test_util:mk_identify_keys()},
+    ServerOpts = #{ handlers => [libp2p_stream_identify:handler(ServerIdentOpts)] },
+    test_util:setup_mplex_streams(ClientOpts, ServerOpts, test_util:setup_sock_pair(Config)).
 
 end_per_testcase(_, Config) ->
     test_util:teardown_sock_pair(Config).
@@ -23,13 +23,15 @@ end_per_testcase(_, Config) ->
 dial_test(Config) ->
     {CPid, _} = ?config(stream_client_server, Config),
 
-    IdentOpts = #{ identify_keys => test_util:mk_identify_keys() },
-    libp2p_stream_identify:dial(CPid, IdentOpts),
-
-    %% Wait for the identify to make it to the muxer
-    ok = test_util:wait_until(fun() ->
-                                      test_util:get_md(identify, CPid) /= undefined
-                              end),
+    IdentOpts = #{identify_keys => test_util:mk_identify_keys(),
+                  identify_handler => {self(), test_ident}},
+    libp2p_stream_muxer:identify(CPid, IdentOpts),
+    receive
+        {handle_identify, test_ident, {ok, _}} -> ok;
+        {handle_identify, test_ident, {error, Other}} -> ct:fail(Other)
+    after 5000 ->
+            ct:fail(timeout_dial_test)
+    end,
 
     %% Check that the observe address of the client as returned by the
     %% server matches our local address in addr_info

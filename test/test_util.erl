@@ -34,11 +34,10 @@ setup_sock_pair(Config) ->
     end,
     [{listen_sock, LSock}, {client_server, {CSock, SSock}} | Config].
 
-setup_mplex_streams(ClientHandlers, ServerHandlers, Config) ->
+setup_mplex_streams(ClientOpts, ServerOpts, Config) ->
     {CSock, SSock} = ?config(client_server, Config),
 
     %% Server muxer
-    ServerOpts = #{ handlers => ServerHandlers },
     {ok, SPid} = libp2p_stream_tcp:start_link(server, #{socket => SSock,
                                                         mod => libp2p_stream_mplex,
                                                         mod_opts => ServerOpts
@@ -46,7 +45,6 @@ setup_mplex_streams(ClientHandlers, ServerHandlers, Config) ->
     gen_tcp:controlling_process(SSock, SPid),
 
     %% Client muxer
-    ClientOpts = #{ handlres => ClientHandlers },
     {ok, CPid} = libp2p_stream_tcp:start_link(client, #{socket => CSock,
                                                         mod => libp2p_stream_mplex,
                                                         mod_opts => ClientOpts

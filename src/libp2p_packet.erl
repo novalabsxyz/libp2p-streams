@@ -132,3 +132,28 @@ encode_varint(I) when is_integer(I), I > 127 ->
     <<1:1, (I band 127):7, (encode_varint(I bsr 7))/binary>>;
 encode_varint(I) when is_integer(I), I < 0 ->
     erlang:error({badarg, I}).
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+encode_test() ->
+    Data = <<"hello there">>,
+    Spec = [u8, u16, u16le, u32, u32le, varint],
+    Header = [60, 6000, 6001, 6002, 6003, byte_size(Data)],
+
+    ?assertEqual(14, spec_size(Spec)),
+
+    Bin = encode_packet(Spec, Header, Data),
+    ?assertEqual({ok, Header, Data, <<>>}, decode_packet(Spec, Bin)),
+    %% Chop into the header for "more" when decoding header
+    ?assertEqual({more, 9}, decode_packet(Spec, binary:part(Bin, {0, 5}))),
+    %% Chop from the end for "more" when decoding data
+    ?assertEqual({more, 5}, decode_packet(Spec, binary:part(Bin, {0, byte_size(Bin) - 5}))),
+
+    ?assertError({cannot_encode, _}, encode_packet([u8], [600], <<>>)),
+    ?assertError(header_length, encode_packet([], [], <<>>)),
+
+    ok.
+
+-endif.

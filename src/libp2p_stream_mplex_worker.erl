@@ -61,7 +61,12 @@ init(Kind, Opts=#{stream_id := StreamID,
                   send_fn := SendFun,
                   stream_md := StreamMD
                  }) ->
-    libp2p_stream_md:md(StreamMD),
+    %% The mplex worker is it's own root stack (since it's a
+    %% stream_transport), but the stream_md value passed in has the
+    %% stack of the creating muxer. Concatenate the two for maximum
+    %% visibility
+    CompleteStack = libp2p_stream_md:get(stack, StreamMD) ++ libp2p_stream_md:get(stack) ++ [{Mod, Kind}],
+    libp2p_stream_md:md(libp2p_stream_md:update({stack, CompleteStack}, StreamMD)),
     ModOpts = maps:get(mod_opts, Opts, #{}),
     ModBaseOpts = #{
                     send_fn => SendFun

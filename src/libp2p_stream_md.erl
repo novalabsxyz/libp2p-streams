@@ -9,27 +9,29 @@
                      {OldMod::atom(), {Mod::atom(), Kind::stack_kind()}}} |
                     {addr_info, {Local::string(), Remote::string()}} |
                     {muxer, pid()} |
-                    {identify, identify_md()}.
+                    {identify, libp2p_identify:identify()}.
 -type md() :: [md_entry()].
--type identify_entry() :: {addr_info, {LocalP2P::string(), RemoteP2P::string()}} |
-                          {observed_addr, string()}.
--type identify_md() :: [identify_entry()].
 
--export([update/1, get/1, get/2,
+-export([update/1, update/2,
+         get/1, get/2,
          md/0, md/1
         ]).
 
 -define(LIBP2P_STREAM_MD_KEY, '__libp2p_stream_md').
 
--spec update(md_entry()) -> ok.
-update({stack, {Mod, Kind}}) when is_atom(Kind) ->
-    Stack = lists:keystore(Mod, 1, ?MODULE:get(stack), {Mod, Kind}),
-    update({stack, Stack});
-update({stack, {OldMod, {Mod, Kind}}}) ->
-    Stack = lists:keyreplace(OldMod, 1, ?MODULE:get(stack), {Mod, Kind}),
-    update({stack, Stack});
-update({K, V}) ->
-    md(lists:keystore(K, 1, md(), {K, V})).
+-spec update(md_entry()) -> md().
+update(Entry) ->
+    md(update(Entry, md())).
+
+-spec update(md_entry(), md()) -> md().
+update({stack, {Mod, Kind}}, MD) when is_atom(Kind) ->
+    Stack = lists:keystore(Mod, 1, ?MODULE:get(stack, MD), {Mod, Kind}),
+    update({stack, Stack}, MD);
+update({stack, {OldMod, {Mod, Kind}}}, MD) ->
+    Stack = lists:keyreplace(OldMod, 1, ?MODULE:get(stack, MD), {Mod, Kind}),
+    update({stack, Stack}, MD);
+update({K, V}, MD) ->
+    lists:keystore(K, 1, MD, {K, V}).
 
 
 -spec get(md_key()) -> any().
@@ -56,7 +58,7 @@ md() ->
     end.
 
 
--spec md(md()) -> ok.
+-spec md(md()) -> md().
 md(MD) when is_list(MD) ->
     erlang:put(?LIBP2P_STREAM_MD_KEY, MD),
-    ok.
+    MD.

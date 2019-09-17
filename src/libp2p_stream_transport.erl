@@ -117,7 +117,7 @@ command(Pid, Cmd) ->
 -spec init({atom(), libp2p_stream:kind(), Opts::map()}) -> {stop, Reason::any()} |
                                                            {ok, #state{}}.
 init({Mod, Kind, Opts}) ->
-    libp2p_stream_md:update({stack, {Mod, Kind}}),
+    libp2p_stream_md:update({stack, [{Mod, Kind}]}),
     State = #state{mod=Mod, mod_state=undefined},
     Result = Mod:init(Kind, Opts),
     handle_init_result(Result, State).

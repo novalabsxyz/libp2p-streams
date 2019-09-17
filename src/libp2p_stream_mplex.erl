@@ -32,13 +32,20 @@
 
 -type worker_key() :: {libp2p_stream:kind(), stream_id()}.
 
+-record(ident,
+       { identify=undefined :: libp2p_identify:identify() | undefined,
+         pid=undefined :: pid() | undefined,
+         waiters=[] :: [term()]
+       }).
+
 -record(state, {
                 next_stream_id=0 :: non_neg_integer(),
                 worker_opts :: map(),
                 workers=#{} :: #{worker_key() => pid()},
                 worker_pids=#{} :: #{pid() => worker_key()},
                 max_received_workers :: pos_integer(),
-                count_received_workers=0 :: non_neg_integer()
+                count_received_workers=0 :: non_neg_integer(),
+                ident=#ident{} :: #ident{}
                }).
 
 %% API
@@ -78,6 +85,7 @@ init(_Kind, Opts=#{send_fn := SendFun }) ->
     end,
     {ok, #state{
             max_received_workers=maps:get(max_received_streams, Opts, ?DEFAULT_MAX_RECEIVED_STREAMS),
+            ident=#ident{},
             worker_opts=WorkerOpts#{send_fn => SendFun,
                                     muxer => self()}
            },
@@ -187,9 +195,39 @@ handle_info(_, {'EXIT', WorkerPid, Reason}, State=#state{}) ->
         false ->
             {noreply, State}
     end;
-handle_info(_, {stream_identify, Identify}, State=#state{}) ->
-    libp2p_stream_md:update({identify, Identify}),
+handle_info(_, {stream_identify, #{identify_handler := {ResultPid, ResultData}}},
+            State=#state{ident=#ident{identify=I}}) when I /= undefined ->
+    ResultPid ! {handle_identify, ResultData, {ok, I}},
     {noreply, State};
+handle_info(_, {stream_identify, #{identify_keys := Keys, identify_handler := {ResultPid, ResultData}}},
+            State=#state{ident=Ident=#ident{pid=undefined}, next_stream_id=StreamID}) ->
+    IdentifyOpts = #{identify_keys => Keys,
+                    identify_handler => {self(), stream_mplex_identify}},
+    Opts = #{ mod => libp2p_stream_multistream,
+              mod_opts => #{ handlers => [libp2p_stream_identify:handler(IdentifyOpts)] }
+            },
+    case start_worker({client, StreamID}, Opts, State) of
+        {ok, Pid, NewState} ->
+            NewIdent = Ident#ident{waiters=[{ResultPid, ResultData} | Ident#ident.waiters], pid=Pid},
+            Packet = encode_packet(StreamID, client, new),
+            {noreply, NewState#state{next_stream_id=StreamID + 1, ident=NewIdent},
+             [{send, Packet}]};
+        {error, Error} ->
+            ResultPid ! {handle_identify, ResultData, {error, Error}},
+            {noreply, State}
+    end;
+handle_info(_, {handle_identify, stream_mplex_identify, Response}, State=#state{ident=Ident=#ident{}}) ->
+    NewIdentify = case Response of
+                      {ok, I} ->
+                          libp2p_stream_md:update({identify, I}),
+                          I;
+                      {error, _} -> undefined
+                  end,
+    lists:foreach(fun({ResultPid, ResultData}) ->
+                          ResultPid ! {handle_identify, ResultData, Response}
+                  end, Ident#ident.waiters),
+    {noreply, State#state{ident=Ident#ident{pid=undefined, waiters=[], identify=NewIdentify}}};
+
 
 handle_info(Kind, Msg, State=#state{}) ->
     lager:warning("Unhandled ~p info ~p", [Kind, Msg]),

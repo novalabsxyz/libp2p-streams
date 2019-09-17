@@ -3,7 +3,8 @@
 -behavior(libp2p_stream).
 
 %% API
--export([dial/2]).
+-export([handler/1
+        ]).
 %% libp2p_stream
 -export([init/2,
          handle_packet/4,
@@ -16,25 +17,25 @@
 -record(state, {
                 pubkey_bin :: libp2p_crypto:pubkey_bin(),
                 sig_fun :: libp2p_crypto:sig_fun(),
-                handlers :: libp2p_stream_multistream:handlers()
+                identify_handler=undefined :: {ResultPid::pid(), ResultData::any()} | undefined
                }).
 
 %%
 %% API
 %%
 
-dial(Muxer, Opts = #{ identify_keys := #{pubkey_bin := _PubKeyBin, sig_fun := _SigFun} }) ->
-    libp2p_stream_muxer:dial(Muxer, #{ handlers => [ {?MODULE:protocol_id(), {?MODULE, Opts}} ] }).
-
+handler(Opts) ->
+    {protocol_id(), {?MODULE, Opts}}.
 
 protocol_id() ->
     <<"/identify/2.0.0">>.
 
-init(client, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigFun} }) ->
+init(client, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigFun},
+                     identify_handler := {ResultPid, ResultData} }) ->
     Challenge = crypto:strong_rand_bytes(20),
     State = #state{pubkey_bin=PubKeyBin,
                    sig_fun=SigFun,
-                   handlers=maps:get(handlers, Opts, [])
+                   identify_handler={ResultPid, ResultData}
                   },
     IdentifyTimeout = maps:get(identify_timeout, Opts, ?DEFAULT_IDENTIFY_TIMEOUT),
     case mk_identify(Challenge, State) of
@@ -46,15 +47,14 @@ init(client, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigF
               {timer, identify_timeout, IdentifyTimeout}
              ]};
         {error, Error} ->
-            lager:warning("Failed to construct identify: ~p", [Error]),
+            notify_identify_handler({error, Error}, State),
             {stop, {error, Error}}
     end;
 init(server, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigFun} }) ->
     IdentifyTimeout = maps:get(identify_timeout, Opts, ?DEFAULT_IDENTIFY_TIMEOUT),
     State = #state{
                pubkey_bin=PubKeyBin,
-               sig_fun=SigFun,
-               handlers=[]
+               sig_fun=SigFun
               },
     {ok, State,
      [{active, once},
@@ -64,27 +64,9 @@ init(server, Opts=#{ identify_keys := #{pubkey_bin := PubKeyBin, sig_fun := SigF
 
 
 handle_packet(client, _, Packet, State=#state{}) ->
-    case libp2p_identify:decode(Packet)  of
-        {ok, Identify} ->
-            LocalP2P = libp2p_crypto:pubkey_bin_to_p2p(State#state.pubkey_bin),
-            RemoteP2P = libp2p_crypto:pubkey_bin_to_p2p(libp2p_identify:pubkey_bin(Identify)),
-            Ident = [{addr_info, {LocalP2P, RemoteP2P}},
-                     {observed_addr, libp2p_identify:observed_addr(Identify)}
-                    ],
-            libp2p_stream_md:update({identify, Ident}),
-            Muxer = libp2p_stream_md:get(muxer),
-            Muxer ! {stream_identify, Identify},
-            case State#state.handlers of
-                [] ->
-                    {stop, normal, State};
-                Handlers ->
-                    libp2p_stream_muxer:dial(Muxer, #{ handlers => Handlers }),
-                    {stop, normal, State}
-            end;
-        {error, Error} ->
-            lager:warning("Received invalid identify response: ~p", [Error]),
-            {stop, normal, State}
-    end;
+    Result = libp2p_identify:decode(Packet),
+    notify_identify_handler(Result, State),
+    {stop, normal, State};
 handle_packet(server, _, Packet, State=#state{}) ->
     case libp2p_identify:decode(Packet) of
         {ok, Identify} ->
@@ -106,6 +88,7 @@ handle_packet(server, _, Packet, State=#state{}) ->
 handle_info(_Kind, {timeout, identify_timeout}, State=#state{}) ->
     {_, RemoteAddr} = libp2p_stream_md:get(addr_info),
     lager:notice("Identify ~p timeout with ~p", [_Kind, RemoteAddr]),
+    notify_identify_handler({error, identify_timeout}, State),
     {stop, normal, State};
 
 handle_info(Kind, Msg, State=#state{}) ->
@@ -128,3 +111,10 @@ mk_identify(Challenge, State=#state{}) ->
 encode_identify(Identify) ->
     Bin = libp2p_identify:encode(Identify),
     libp2p_packet:encode_packet([varint], [byte_size(Bin)], Bin).
+
+
+notify_identify_handler(_Notify, #state{identify_handler=undefined}) ->
+    ok;
+notify_identify_handler(Notify, #state{identify_handler={ResultPid, ResultData}}) ->
+    ResultPid ! {handle_identify, ResultData, Notify},
+    ok.
