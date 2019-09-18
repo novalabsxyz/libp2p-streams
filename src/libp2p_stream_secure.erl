@@ -18,7 +18,7 @@
                 mod :: atom(),
                 mod_opts :: map(),
                 mod_state :: any(),
-                peer_address :: string(),
+                peer_address :: string() | undefined,
                 identify_address=undefined :: string() | undefined,
                 exchanged = false :: boolean(),
                 secure_keys :: secure_keymap(),
