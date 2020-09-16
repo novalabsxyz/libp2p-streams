@@ -14,7 +14,10 @@ accept_socket(Pool, Socket, Acceptors) ->
     acceptor_pool:accept_socket(Pool, Socket, Acceptors).
 
 init(Opts) ->
-    Conn = #{id => libp2p_stream_tcp,
-             start => {libp2p_stream_tcp, Opts, []},
-             grace => 5000}, % Give connections 5000ms to close before shutdown
+    Conn = #{
+        id => libp2p_stream_tcp,
+        start => {libp2p_stream_tcp, Opts, []},
+        % Give connections 5000ms to close before shutdown
+        grace => 5000
+    },
     {ok, {#{}, [Conn]}}.
