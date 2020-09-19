@@ -1,0 +1,18 @@
+syntax = "proto2";
+
+enum key_type {
+	rsa = 0;
+	ed25519 = 1;
+	secp256k1 = 2;
+	ecdsa = 3;
+}
+
+message public_key {
+	required key_type type = 1;
+	required bytes data = 2;
+}
+
+message private_key {
+	required key_type type = 1;
+	required bytes data = 2;
+}

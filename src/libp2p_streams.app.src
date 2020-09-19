@@ -12,21 +12,23 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-{application, libp2p_streams,
- [{description, "An Erlang implementation of libp2p streams"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  lager,
-                  acceptor_pool,
-                  multiaddr,
-                  libp2p_crypto
-                 ]},
-  {env,[]},
+{application, libp2p_streams, [
+    {description, "An Erlang implementation of libp2p streams"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        lager,
+        acceptor_pool,
+        multiaddr,
+        crypto,
+        multihash,
+        libp2p_crypto
+    ]},
+    {env, []},
 
-  %% hex.pm packaging:
-  {licenses, ["Apache 2.0"]},
-  {links, [{"Github", "https://github.com/helium/libp2p-streams"}]}
- ]}.
+    %% hex.pm packaging:
+    {licenses, ["Apache 2.0"]},
+    {links, [{"Github", "https://github.com/helium/libp2p-streams"}]}
+]}.
