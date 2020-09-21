@@ -1,0 +1,8 @@
+syntax = "proto2";
+
+import "libp2p_key.proto";
+
+message plaintext_exchange {
+  optional bytes id = 1;
+  optional public_key pubkey = 2;
+}
