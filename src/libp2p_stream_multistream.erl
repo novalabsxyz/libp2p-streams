@@ -29,11 +29,12 @@
 -define(PROTOCOL, "/multistream/1.0.0").
 -define(MAX_LINE_LENGTH, 64 * 1024).
 -define(DEFAULT_NEGOTIATION_TIME, 30000).
+-define(HANDSHAKE_RETRIES, 3).
 
 %% libp2p_stream
 -export([init/2, handle_packet/4, handle_info/3]).
 %% FSM states
--export([handshake/3, handshake_reverse/3, negotiate/3]).
+-export([handshake/3, negotiate/3]).
 %% Utility
 -export([
     protocol_id/0,
@@ -46,8 +47,10 @@
 init(Kind, Opts = #{handler_fn := HandlerFun}) ->
     init(Kind, maps:remove(handler_fn, Opts#{handlers => HandlerFun()}));
 init(server, Opts = #{handlers := Handlers}) when is_list(Handlers), length(Handlers) > 0 ->
+    lager:debug("init server multistream with handlers ~p", [Handlers]),
     NegotiationTime = maps:get(negotiation_timeout, Opts, ?DEFAULT_NEGOTIATION_TIME),
-    {ok, #state{fsm_state = handshake, handlers = Handlers, negotiation_timeout = NegotiationTime},
+    {ok, #state{fsm_state = handshake, handlers = Handlers,
+                negotiation_timeout = NegotiationTime},
         [
             {packet_spec, [varint]},
             {active, once},
@@ -55,20 +58,16 @@ init(server, Opts = #{handlers := Handlers}) when is_list(Handlers), length(Hand
             {timer, negotiate_timeout, NegotiationTime}
         ]};
 init(client, Opts = #{handlers := Handlers}) when is_list(Handlers), length(Handlers) > 0 ->
+    lager:debug("init client multistream with handlers ~p", [Handlers]),
     NegotiationTime = maps:get(negotiation_timeout, Opts, ?DEFAULT_NEGOTIATION_TIME),
-    %% The client side of a multistream _should_ get a server
-    %% handshake right away. The tcp stack may combine an incoming and
-    %% an outgoing connection as part of a simultaneous
-    %% connection. This would mean we'd end up with two clients. In
-    %% order to break this deadlock we add some randomness to the
-    %% timeout and end up having one of the clients do a reverse
-    %% handshake, when successful turns the originating client into a
-    %% server.
     HandshakeTime = maps:get(handshake_timeout, Opts, rand:uniform(20000) + 15000),
-    {ok, #state{fsm_state = handshake, handlers = Handlers, negotiation_timeout = NegotiationTime},
+    {ok, #state{fsm_state = handshake, handlers = Handlers,
+                negotiation_timeout = NegotiationTime},
         [
             {packet_spec, [varint]},
             {active, once},
+            %% have client/initiator kick things off by sending the initial multistream handshake
+            {send, encode_line(<<?PROTOCOL>>)},
             {timer, handshake_timeout, HandshakeTime}
         ]};
 init(_, _) ->
@@ -82,38 +81,30 @@ init(_, _) ->
 handshake(client, {packet, Packet}, Data = #state{handlers = Handlers}) ->
     case binary_to_line(Packet) of
         <<?PROTOCOL>> ->
-            %% Handshake success. Request the first handler in handler
-            %% list and move on to negotiation state.
+            %% Client got handshake from server.
+            %% Request the first handler in handler list and move on to negotiation state.
             {Key, _} = select_handler(1, Data),
-            lager:debug("Client negotiating handler using: ~p", [[K || {K, _} <- Handlers]]),
+            lager:notice("Client negotiating handler using: ~p", [[K || {K, _} <- Handlers]]),
             {next_state, negotiate, Data#state{selected_handler = 1}, [
                 {cancel_timer, handshake_timeout},
                 {active, once},
-                {send, encode_line(<<?PROTOCOL>>)},
                 {send, encode_line(Key)}
             ]};
         Other ->
             handshake(client, {error, {handshake_mismatch, Other}}, Data)
     end;
 handshake(client, {timeout, handshake_timeout}, Data = #state{}) ->
-    %% The client failed to receive a handshake from the server. This
-    %% _may_ happen if there's a simultaneous connection that happens
-    %% where two nodes connect to eachother at the same time which
-    %% bypasses the listen socket. Port reuse and slow internet causes
-    %% this corner case of tcp behavior.
-    %%
-    %% We verify this happened by having the client send the
-    %% handshake.If it receives a response it means this client should
-    %% behave like a server instead.
-    lager:debug("Client attempting reverse handshake to detect simultaneous connection"),
-    {next_state, handshake_reverse, Data, [
-        {active, once},
-        {send, encode_line(<<?PROTOCOL>>)}
-    ]};
+    %% The client failed to receive a handshake from the server after all retries
+    handshake(client, {error, handshake_timeout}, Data);
+
 handshake(server, {packet, Packet}, Data = #state{}) ->
     case binary_to_line(Packet) of
         <<?PROTOCOL>> ->
-            {next_state, negotiate, Data, [{active, once}]};
+            %% server got the multistream header from client, respond in kind
+            %% NOTE: server will only send this header *after* receiving it from client
+            %% as such this multistream implementation requires the client to initiate the handshake
+            {next_state, negotiate,
+                Data, [{active, once}]};
         Other ->
             handshake(server, {error, {handshake_mismatch, Other}}, Data)
     end;
@@ -122,29 +113,6 @@ handshake(Kind, {error, Error}, Data = #state{}) ->
     {stop, normal, Data};
 handshake(Kind, Msg, State) ->
     handle_event(handshake, Kind, Msg, State).
-
--spec handshake_reverse(libp2p_stream:kind(), fsm_msg(), #state{}) -> fsm_result().
-handshake_reverse(client, {packet, Packet}, Data = #state{}) ->
-    case binary_to_line(Packet) of
-        <<?PROTOCOL>> ->
-            %% We received a handshake that we initiated during
-            %% handshake_timeout, which is usually server
-            %% beavior. This likely means that we're in the
-            %% simultaneouso connection scenario as described in
-            %% `handshake'.
-            {next_state, negotiate, Data, [
-                {active, once},
-                swap_kind,
-                {timer, negotiate_timeout, Data#state.negotiation_timeout}
-            ]};
-        Other ->
-            handshake_reverse(client, {error, {handshake_mismatch, Other}}, Data)
-    end;
-handshake_reverse(client, {error, Error}, Data = #state{}) ->
-    lager:notice("Client reverse handshake failed: ~p", [Error]),
-    {stop, normal, Data};
-handshake_reverse(Kind, Msg, State) ->
-    handle_event(handshake_reverse, Kind, Msg, State).
 
 -spec negotiate(libp2p_stream:kind(), fsm_msg(), #state{}) -> fsm_result().
 negotiate(client, {packet, Packet}, Data = #state{}) ->
@@ -157,9 +125,8 @@ negotiate(client, {packet, Packet}, Data = #state{}) ->
                 not_found ->
                     negotiate(client, {error, no_handlers}, Data);
                 {Key, _} ->
-                    lager:debug("Client negotiating next handler: ~p", [Key]),
+                    lager:notice("Client negotiating next handler: ~p", [Key]),
                     {keep_state, Data#state{selected_handler = NextHandler}, [
-                        {cancel_timer, handshake_timeout},
                         {active, once},
                         {send, encode_line(Key)}
                     ]}
@@ -168,7 +135,7 @@ negotiate(client, {packet, Packet}, Data = #state{}) ->
             %% Server agreed and switched to the handler.
             case select_handler(Data#state.selected_handler, Data) of
                 {Key, {M, A}} when Key == Line ->
-                    lager:debug("Client negotiated handler for: ~p, handler: ~p", [Line, M]),
+                    lager:notice("Client negotiated handler for: ~p, handler: ~p", [Line, M]),
                     {keep_state, Data, [{swap, M, A}]};
                 _ ->
                     negotiate(client, {error, {unexpected_server_response, Line}}, Data)
@@ -187,12 +154,13 @@ negotiate(server, {packet, Packet}, Data = #state{}) ->
                 not_found ->
                     {keep_state, Data, [{send, encode_line(<<"na">>)}]};
                 {_Prefix, {M, O}, LineRest} ->
-                    lager:debug(
+                    lager:notice(
                         "Server negotiated handler for: ~p, handler: ~p, path: ~p",
                         [Line, M, LineRest]
                     ),
                     {keep_state, Data, [
                         {send, encode_line(Line)},
+                        {cancel_timer, negotiate_timeout},
                         {swap, M, O#{path => LineRest}}
                     ]}
             end

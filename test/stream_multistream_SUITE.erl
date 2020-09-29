@@ -9,26 +9,20 @@ all() ->
      negotiate_server_test,
      negotiate_client_test,
      negotiate_timeout_test,
-     handshake_client_reverse_test,
      handshake_server_mismatch_test,
      handshake_client_mismatch_test,
-     handshake_client_reverse_fail_test,
      negotiate_client_fail_test,
      negotiate_client_mismatch_test
     ].
 
 init_per_testcase(negotiate_client_test, Config) ->
     init_client_test_common(Config, #{});
-init_per_testcase(handshake_client_reverse_test, Config) ->
-    init_client_test_common(Config, #{handshake_timeout => 300});
 init_per_testcase(handshake_client_mismatch_test, Config) ->
     init_client_test_common(Config, #{});
 init_per_testcase(negotiate_client_fail_test, Config) ->
     init_client_test_common(Config, #{});
 init_per_testcase(negotiate_client_mismatch_test, Config) ->
     init_client_test_common(Config, #{});
-init_per_testcase(handshake_client_reverse_fail_test, Config) ->
-    init_client_test_common(Config, #{handshake_timeout => 300});
 init_per_testcase(negotiate_timeout_test, Config) ->
     test_util:setup(),
     meck_stream(server, test_stream),
@@ -140,22 +134,17 @@ handshake_client_reverse_test(Config) ->
 negotiate_timeout_test(Config) ->
     {CSock, _SSock} = ?config(client_server, Config),
     Pid = ?config(stream, Config),
-
-    %% receive server handshake
-    ?assertEqual(libp2p_stream_multistream:protocol_id(), receive_line(CSock)),
-    %% Negotation time is set short for this test so the server will
-    %% timeout and case the stream to stop
+    %% send handshake from client to server, server wont respond forcing a timeout
+    %% which will result in the stream being closed
+    send_line(CSock, libp2p_stream_multistream:protocol_id()),
+    %% Negotation time is set short for this
     ?assert(test_util:pid_should_die(Pid)),
     ok.
 
 handshake_server_mismatch_test(Config) ->
     {CSock, _SSock} = ?config(client_server, Config),
-
     Pid = ?config(stream, Config),
-
-    %% receive server handshake
-    ?assertEqual(libp2p_stream_multistream:protocol_id(), receive_line(CSock)),
-
+     %% send bad handshake from client to server
     send_line(CSock, <<"bad_handshake">>),
     ?assert(test_util:pid_should_die(Pid)),
 
@@ -224,16 +213,16 @@ handshake(client, Sock) ->
     %% receive server handshake
     ProtocolId = libp2p_stream_multistream:protocol_id(),
     HandshakeSize = byte_size(libp2p_stream_multistream:encode_line(ProtocolId)),
-    ?assertEqual(ProtocolId, receive_line(Sock, HandshakeSize)),
     %% Send client handshake
-    send_line(Sock, ProtocolId);
+    send_line(Sock, ProtocolId),
+    ?assertEqual(libp2p_stream_multistream:protocol_id(), receive_line(Sock, HandshakeSize));
 handshake(server, Sock) ->
     ProtocolId = libp2p_stream_multistream:protocol_id(),
     HandshakeSize = byte_size(libp2p_stream_multistream:encode_line(ProtocolId)),
-    %% send server handshake
-    send_line(Sock, ProtocolId),
     %% receive client handshake
-    ?assertEqual(libp2p_stream_multistream:protocol_id(), receive_line(Sock, HandshakeSize)).
+    ?assertEqual(libp2p_stream_multistream:protocol_id(), receive_line(Sock, HandshakeSize)),
+    %% send server handshake
+    send_line(Sock, ProtocolId).
 
 
 send_line(Sock, Line) ->
