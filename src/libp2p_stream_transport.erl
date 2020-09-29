@@ -277,7 +277,6 @@ dispatch_packets(State = #state{active = false}) ->
 dispatch_packets(State = #state{data = Data, mod = Mod}) ->
     case libp2p_packet:decode_packet(State#state.packet_spec, Data) of
         {ok, Header, Packet, Tail} ->
-            lager:debug("dispatching packet to mod ~p, header ~p, packet ~p", [Mod, Header, Packet]),
             Result = Mod:handle_packet(Header, Packet, State#state.mod_state),
             %% Dispatch the result of handling the packet and try
             %% receiving again since we may have received enough for

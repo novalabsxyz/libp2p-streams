@@ -29,7 +29,6 @@
 -define(PROTOCOL, "/multistream/1.0.0").
 -define(MAX_LINE_LENGTH, 64 * 1024).
 -define(DEFAULT_NEGOTIATION_TIME, 30000).
--define(HANDSHAKE_RETRIES, 3).
 
 %% libp2p_stream
 -export([init/2, handle_packet/4, handle_info/3]).
@@ -84,7 +83,7 @@ handshake(client, {packet, Packet}, Data = #state{handlers = Handlers}) ->
             %% Client got handshake from server.
             %% Request the first handler in handler list and move on to negotiation state.
             {Key, _} = select_handler(1, Data),
-            lager:notice("Client negotiating handler using: ~p", [[K || {K, _} <- Handlers]]),
+            lager:debug("Client negotiating handler using: ~p", [[K || {K, _} <- Handlers]]),
             {next_state, negotiate, Data#state{selected_handler = 1}, [
                 {cancel_timer, handshake_timeout},
                 {active, once},
@@ -100,9 +99,6 @@ handshake(client, {timeout, handshake_timeout}, Data = #state{}) ->
 handshake(server, {packet, Packet}, Data = #state{}) ->
     case binary_to_line(Packet) of
         <<?PROTOCOL>> ->
-            %% server got the multistream header from client, respond in kind
-            %% NOTE: server will only send this header *after* receiving it from client
-            %% as such this multistream implementation requires the client to initiate the handshake
             {next_state, negotiate,
                 Data, [{active, once}]};
         Other ->
@@ -125,7 +121,7 @@ negotiate(client, {packet, Packet}, Data = #state{}) ->
                 not_found ->
                     negotiate(client, {error, no_handlers}, Data);
                 {Key, _} ->
-                    lager:notice("Client negotiating next handler: ~p", [Key]),
+                    lager:debug("Client negotiating next handler: ~p", [Key]),
                     {keep_state, Data#state{selected_handler = NextHandler}, [
                         {active, once},
                         {send, encode_line(Key)}
@@ -135,7 +131,7 @@ negotiate(client, {packet, Packet}, Data = #state{}) ->
             %% Server agreed and switched to the handler.
             case select_handler(Data#state.selected_handler, Data) of
                 {Key, {M, A}} when Key == Line ->
-                    lager:notice("Client negotiated handler for: ~p, handler: ~p", [Line, M]),
+                    lager:debug("Client negotiated handler for: ~p, handler: ~p", [Line, M]),
                     {keep_state, Data, [{swap, M, A}]};
                 _ ->
                     negotiate(client, {error, {unexpected_server_response, Line}}, Data)
@@ -154,7 +150,7 @@ negotiate(server, {packet, Packet}, Data = #state{}) ->
                 not_found ->
                     {keep_state, Data, [{send, encode_line(<<"na">>)}]};
                 {_Prefix, {M, O}, LineRest} ->
-                    lager:notice(
+                    lager:debug(
                         "Server negotiated handler for: ~p, handler: ~p, path: ~p",
                         [Line, M, LineRest]
                     ),

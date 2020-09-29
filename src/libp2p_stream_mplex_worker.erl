@@ -68,7 +68,7 @@ init(
         stream_md := StreamMD
     }
 ) ->
-    lager:notice("starting mplex worker kind ~p, stream id ~p, mod ~p", [Kind, StreamID, Mod]),
+    lager:debug("starting mplex worker kind ~p, stream id ~p, mod ~p", [Kind, StreamID, Mod]),
     %% The mplex worker is it's own root stack (since it's a
     %% stream_transport), but the stream_md value passed in has the
     %% stack of the creating muxer. Concatenate the two for maximum
@@ -89,7 +89,6 @@ init(
             kind = Kind
         }
     end,
-    lager:debug("starting mplex worker for streamid ~p, mod ~p, stack ~p", [StreamID, Mod, CompleteStack]),
     case Mod:init(Kind, maps:merge(ModOpts, ModBaseOpts)) of
         {ok, ModState, Actions} ->
             Actions0 =
@@ -180,8 +179,8 @@ handle_info(Msg, State = #state{mod = Mod, stream_id = _StreamId}) ->
             {noreply, State}
     end.
 
-handle_packet(Header, Packet, State = #state{mod = Mod, stream_id = StreamId}) ->
-    lager:debug("~p handling packet for stream id ~p, header ~p, packet ~p ~p", [Mod, StreamId, Header, Packet, Packet]),
+handle_packet(Header, Packet, State = #state{mod = Mod, stream_id = _StreamId}) ->
+    lager:debug("~p handling packet for stream id ~p, header ~p, packet ~p ~p", [Mod, _StreamId, Header, Packet, Packet]),
     Active =
         case State#state.active of
             once -> false;

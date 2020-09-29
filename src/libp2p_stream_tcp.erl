@@ -293,7 +293,6 @@ handle_packet(Header, Packet, State = #state{mod = Mod}) ->
             once -> false;
             true -> true
         end,
-    lager:debug("stream tcp handle packet with mod ~p, header ~p, data ~p", [Mod, Header, Packet]),
     Result = Mod:handle_packet(State#state.kind, Header, Packet, State#state.mod_state),
     handle_info_result(Result, State#state{}, [{active, Active}]).
 

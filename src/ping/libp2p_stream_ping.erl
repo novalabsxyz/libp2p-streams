@@ -13,6 +13,7 @@
 ]).
 
 -define(PING_SIZE, 32).
+-define(PACKET_SPEC, {size, ?PING_SIZE}).
 
 -define(DEFAULT_TIMEOUT_SECS, 20).
 -define(DEFAULT_INTERVAL_SECS, 15).
@@ -42,23 +43,26 @@ init(
     client,
     Opts
 ) ->
+    lager:debug("init ping client with opts", [Opts]),
     Ping = mk_ping(),
     State = mk_state(Opts),
     {ok, State#state{ping = Ping}, [
         {active, once},
         {send, encode_ping(Ping)},
         {timeout, {ping_timeout, Ping}, State#state.timeout},
-        {packet_spec, [varint]}
+        {packet_spec, [?PACKET_SPEC]}
     ]};
 init(server, Opts) ->
+    lager:debug("init ping server with opts ~p", [Opts]),
     State = mk_state(Opts),
     {ok, State, [
         {active, once},
-        {packet_spec, [varint]}
+        {packet_spec, [?PACKET_SPEC]}
     ]}.
 
 handle_packet(server, _, Packet, State = #state{}) ->
     %% Respond to inbound ping by echoing it back
+    lager:debug("received packet and echoing back ~p", [Packet]),
     {noreply, State, [
         {active, once},
         {send, encode_ping(Packet)}
@@ -120,7 +124,7 @@ mk_ping() ->
     crypto:strong_rand_bytes(?PING_SIZE).
 
 encode_ping(PingData) ->
-    libp2p_packet:encode_packet([varint], [byte_size(PingData)], PingData).
+    libp2p_packet:encode_packet([?PACKET_SPEC], [0], PingData).
 
 mk_state(Opts) ->
     #state{
