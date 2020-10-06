@@ -68,6 +68,7 @@ init(
         stream_md := StreamMD
     }
 ) ->
+    lager:debug("starting mplex worker kind ~p, stream id ~p, mod ~p", [Kind, StreamID, Mod]),
     %% The mplex worker is it's own root stack (since it's a
     %% stream_transport), but the stream_md value passed in has the
     %% stack of the creating muxer. Concatenate the two for maximum
@@ -90,7 +91,12 @@ init(
     end,
     case Mod:init(Kind, maps:merge(ModOpts, ModBaseOpts)) of
         {ok, ModState, Actions} ->
-            {ok, MakeState(ModState), [{send_fn, SendFun} | Actions]};
+            Actions0 =
+                case Kind of
+                    client -> [{send_fn, SendFun}, {send, new} | Actions];
+                    server -> [{send_fn, SendFun} | Actions]
+                end,
+            {ok, MakeState(ModState), Actions0};
         {stop, Reason} ->
             {stop, Reason};
         {stop, Reason, ModState, Actions} ->
@@ -110,8 +116,8 @@ handle_call(Cmd, From, State = #state{mod = Mod, mod_state = ModState}) ->
     end.
 
 -spec handle_command_result(libp2p_stream:handle_command_result(), #state{}) ->
-    {reply, any(), #state{}, libp2p_stream:action()} |
-    {noreply, #state{}, libp2p_stream:actions()}.
+    {reply, any(), #state{}, libp2p_stream:action()}
+    | {noreply, #state{}, libp2p_stream:actions()}.
 handle_command_result({reply, Reply, ModState}, State = #state{}) ->
     handle_command_result({reply, Reply, ModState, []}, State);
 handle_command_result({reply, Reply, ModState, Actions}, State = #state{}) ->
@@ -162,7 +168,8 @@ handle_info({swap_stop, _, normal}, State) ->
 handle_info({swap_stop, Mod, Reason}, State) ->
     lager:debug("Stopping after ~p:init error: ~p", [Mod, Reason]),
     {stop, normal, State};
-handle_info(Msg, State = #state{mod = Mod}) ->
+handle_info(Msg, State = #state{mod = Mod, stream_id = _StreamId}) ->
+    lager:debug("handling msg ~p for stream id ~p, mod: ~p", [Msg, _StreamId, Mod]),
     case erlang:function_exported(Mod, handle_info, 3) of
         true ->
             Result = Mod:handle_info(State#state.kind, Msg, State#state.mod_state),
@@ -172,7 +179,14 @@ handle_info(Msg, State = #state{mod = Mod}) ->
             {noreply, State}
     end.
 
-handle_packet(Header, Packet, State = #state{mod = Mod}) ->
+handle_packet(Header, Packet, State = #state{mod = Mod, stream_id = _StreamId}) ->
+    lager:debug("~p handling packet for stream id ~p, header ~p, packet ~p ~p", [
+        Mod,
+        _StreamId,
+        Header,
+        Packet,
+        Packet
+    ]),
     Active =
         case State#state.active of
             once -> false;
@@ -194,6 +208,9 @@ handle_info_result({stop, Reason, ModState, Actions}, State = #state{}, PreActio
 handle_info_result(Other, State = #state{}, _PreActions) ->
     {stop, {error, {invalid_handle_info_result, Other}}, State}.
 
+handle_action({send, new}, State = #state{}) ->
+    Packet = libp2p_stream_mplex:encode_packet(State#state.stream_id, State#state.kind, new),
+    {action, {send, Packet}, State};
 handle_action({send, reset}, State = #state{}) ->
     Packet = libp2p_stream_mplex:encode_packet(State#state.stream_id, State#state.kind, reset),
     {action, {send, Packet}, State};
@@ -232,6 +249,7 @@ handle_action({swap, Mod, ModOpts}, State = #state{}) ->
     libp2p_stream_md:update({stack, {State#state.mod, {Mod, State#state.kind}}}),
     case Mod:init(State#state.kind, maps:merge(ModOpts, State#state.mod_base_opts)) of
         {ok, ModState, Actions} ->
+            lager:debug("swapping mplex worker stack to mod ~p", [Mod]),
             {replace, Actions, State#state{mod_state = ModState, mod = Mod}};
         {stop, Reason} ->
             self() ! {swap_stop, Mod, Reason},

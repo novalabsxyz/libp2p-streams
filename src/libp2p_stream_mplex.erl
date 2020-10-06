@@ -2,6 +2,9 @@
 
 -behavior(libp2p_stream).
 
+%% API
+-export([handler/1]).
+%% libp2p_stream
 -export([
     init/2,
     handle_packet/4,
@@ -51,6 +54,9 @@
 }).
 
 %% API
+
+handler(Opts) ->
+    {protocol_id(), {?MODULE, Opts}}.
 
 protocol_id() ->
     <<"/mplex/6.7.0">>.
@@ -121,6 +127,11 @@ handle_packet(
             false ->
                 {noreply, State, [{active, once}]};
             WorkerPid ->
+                lager:debug("handling packet for worker, kind ~p, streamid ~p, pid ~p", [
+                    Kind,
+                    StreamID,
+                    WorkerPid
+                ]),
                 Fun(WorkerPid),
                 {noreply, State, [{active, once}]}
         end
@@ -185,6 +196,7 @@ handle_packet(
                 end
             );
         _ ->
+            lager:debug("failed to decode mplex header ~p", [Header]),
             {noreply, State}
     end.
 
@@ -197,8 +209,7 @@ handle_command(Kind, {stream_dial, Opts = #{handlers := Handlers}}, From, State 
 handle_command(_Kind, {stream_dial, Opts}, _From, State = #state{next_stream_id = StreamID}) ->
     case start_worker({client, StreamID}, Opts, State) of
         {ok, Pid, NewState} ->
-            Packet = encode_packet(StreamID, client, new),
-            {reply, {ok, Pid}, NewState#state{next_stream_id = StreamID + 1}, [{send, Packet}]};
+            {reply, {ok, Pid}, NewState#state{next_stream_id = StreamID + 1}, []};
         {error, Error} ->
             {reply, {error, Error}, State}
     end;
@@ -258,10 +269,7 @@ handle_info(
                 waiters = [{ResultPid, ResultData} | Ident#ident.waiters],
                 pid = Pid
             },
-            Packet = encode_packet(StreamID, client, new),
-            {noreply, NewState#state{next_stream_id = StreamID + 1, ident = NewIdent}, [
-                {send, Packet}
-            ]};
+            {noreply, NewState#state{next_stream_id = StreamID + 1, ident = NewIdent}, []};
         {error, Error} ->
             ResultPid ! {handle_identify, ResultData, {error, Error}},
             {noreply, State}

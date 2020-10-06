@@ -175,8 +175,8 @@ handle_call(Cmd, From, State = #state{mod = Mod, mod_state = ModState, kind = Ki
     end.
 
 -spec handle_command_result(libp2p_stream:handle_command_result(), #state{}) ->
-    {reply, any(), #state{}, libp2p_stream:action()} |
-    {noreply, #state{}, libp2p_stream:actions()}.
+    {reply, any(), #state{}, libp2p_stream:action()}
+    | {noreply, #state{}, libp2p_stream:actions()}.
 handle_command_result({reply, Reply, ModState}, State = #state{}) ->
     handle_command_result({reply, Reply, ModState, []}, State);
 handle_command_result({reply, Reply, ModState, Actions}, State = #state{}) ->

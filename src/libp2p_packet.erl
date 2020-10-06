@@ -1,6 +1,6 @@
 -module(libp2p_packet).
 
--type spec_type() :: u8 | u16 | u16le | u32 | u32le | varint.
+-type spec_type() :: u8 | u16 | u16le | u32 | u32le | varint | {size, pos_integer()}.
 -type spec() :: [spec_type()].
 -type header() :: [non_neg_integer()].
 
@@ -33,16 +33,26 @@ encode_packet(Spec, Header, Data) ->
     <<BinHeader/binary, Data/binary>>.
 
 -spec decode_packet(spec(), binary()) ->
-    {ok, Header :: header(), Data :: binary(), Tail :: binary()} |
-    {more, Expected :: pos_integer()}.
+    {ok, Header :: header(), Data :: binary(), Tail :: binary()}
+    | {more, Expected :: pos_integer()}.
 decode_packet(Spec, Bin) ->
     case decode_header(Spec, Bin) of
         {ok, Header, Tail} ->
-            case lists:last(Header) of
-                PacketSize when PacketSize =< byte_size(Tail) ->
+            case {lists:last(Spec), lists:last(Header)} of
+                {{size, PacketSize}, 0} ->
+                    %% last header is a zero, must have a {size, BinSize} spec present
+                    %% use the specified size to determine if we have sufficient Bin data
+                    case PacketSize =< byte_size(Tail) of
+                        true ->
+                            <<Packet:PacketSize/binary, Rest/binary>> = Tail,
+                            {ok, Header, Packet, Rest};
+                        false ->
+                            {more, PacketSize - byte_size(Tail)}
+                    end;
+                {_, PacketSize} when PacketSize =< byte_size(Tail) ->
                     <<Packet:PacketSize/binary, Rest/binary>> = Tail,
                     {ok, Header, Packet, Rest};
-                PacketSize ->
+                {_, PacketSize} ->
                     {more, PacketSize - byte_size(Tail)}
             end;
         {more, N} ->
@@ -52,6 +62,9 @@ decode_packet(Spec, Bin) ->
 -spec encode_header(spec(), header(), Acc :: binary()) -> binary().
 encode_header([], [], Acc) ->
     Acc;
+%% when the size tuple is specified as the packet spec, we ignore the associated Header value
+encode_header([{size, _BinSize} | SpecTail], [_V | HeaderTail], Acc) when _BinSize > 0 ->
+    encode_header(SpecTail, HeaderTail, <<Acc/binary>>);
 encode_header([u8 | SpecTail], [V | HeaderTail], Acc) when V >= 0, V < 256 ->
     encode_header(SpecTail, HeaderTail, <<Acc/binary, V:8/unsigned-integer>>);
 encode_header([u16 | SpecTail], [V | HeaderTail], Acc) when V >= 0, V < 65536 ->
@@ -72,6 +85,10 @@ encode_header([Type | _], [V | _], _) ->
     {ok, Header :: header(), Tail :: binary()} | {more, Expected :: pos_integer()}.
 decode_header([], Bin, Header) ->
     {ok, lists:reverse(Header), Bin};
+%% when the size tuple is specified as the packet spec, assume the Bin has no associated
+%% header data for this spec, Header value is ignored
+decode_header([{size, _BinSize} | Tail], Bin, Header) ->
+    decode_header(Tail, Bin, [0 | Header]);
 decode_header([u8 | Tail], <<V:8/unsigned-integer, Rest/binary>>, Header) ->
     decode_header(Tail, Rest, [V | Header]);
 decode_header([u16 | Tail], <<V:16/unsigned-integer-big, Rest/binary>>, Header) ->
@@ -98,6 +115,8 @@ spec_size(Spec) ->
 -spec spec_size(spec(), Acc :: non_neg_integer()) -> MinSize :: non_neg_integer().
 spec_size([], Acc) ->
     Acc;
+spec_size([{size, _BinSize} | Tail], Acc) ->
+    spec_size(Tail, Acc);
 spec_size([u8 | Tail], Acc) ->
     spec_size(Tail, Acc + 1);
 spec_size([u16 | Tail], Acc) ->
@@ -138,13 +157,21 @@ encode_varint(I) when is_integer(I), I < 0 ->
 
 encode_test() ->
     Data = <<"hello there">>,
-    Spec = [u8, u16, u16le, u32, u32le, varint],
-    Header = [60, 6000, 6001, 6002, 6003, byte_size(Data)],
+    %% NOTE: size spec should only be used for the final protocol in a stack
+    Spec = [u8, u16, u16le, u32, u32le, varint, {size, byte_size(Data)}],
+    Header = [60, 6000, 6001, 6002, 6003, byte_size(Data), 0],
 
     ?assertEqual(14, spec_size(Spec)),
 
     Bin = encode_packet(Spec, Header, Data),
     ?assertEqual({ok, Header, Data, <<>>}, decode_packet(Spec, Bin)),
+    %% encode same Bin again but with a non zero value assocaited with the size packet spec
+    %% this will be ignored and defaulted to zero upon decoding
+    Header2 = [60, 6000, 6001, 6002, 6003, byte_size(Data), 100],
+    Bin2 = encode_packet(Spec, Header2, Data),
+    %% returned header will match the original Header with zero for the associated size spec
+    ?assertEqual({ok, Header, Data, <<>>}, decode_packet(Spec, Bin2)),
+
     %% Chop into the header for "more" when decoding header
     ?assertEqual({more, 9}, decode_packet(Spec, binary:part(Bin, {0, 5}))),
     %% Chop from the end for "more" when decoding data
@@ -152,7 +179,7 @@ encode_test() ->
 
     ?assertError({cannot_encode, _}, encode_packet([u8], [600], <<>>)),
     ?assertError(header_length, encode_packet([], [], <<>>)),
-
+    ?assertError(header_length, encode_packet([u8], [], <<"data">>)),
     ok.
 
 -endif.

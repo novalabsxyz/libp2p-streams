@@ -3,47 +3,47 @@
 -behavior(gen_server).
 
 -type action() ::
-    libp2p_stream:action() |
-    {send_fn, send_fn()}.
+    libp2p_stream:action()
+    | {send_fn, send_fn()}.
 
 -type actions() :: [action()].
 
 -type init_result() ::
-    {ok, State :: any()} |
-    {ok, State :: any(), actions()} |
-    {stop, Reason :: term()} |
-    {stop, Reason :: term(), State :: any(), actions()}.
+    {ok, State :: any()}
+    | {ok, State :: any(), actions()}
+    | {stop, Reason :: term()}
+    | {stop, Reason :: term(), State :: any(), actions()}.
 
 -type handle_call_result() ::
-    {reply, Reply :: term(), NewState :: any()} |
-    {reply, Reply :: term(), NewState :: any(), {continue, Continue :: term()}} |
-    {reply, Reply :: term(), NewState :: any(), actions()} |
-    {noreply, NewState :: any()} |
-    {noreply, NewState :: any(), {continue, Continue :: term()}} |
-    {noreply, NewState :: any(), actions()} |
-    {stop, Reason :: any(), NewState :: any()} |
-    {stop, Reason :: any(), NewState :: any(), actions()}.
+    {reply, Reply :: term(), NewState :: any()}
+    | {reply, Reply :: term(), NewState :: any(), {continue, Continue :: term()}}
+    | {reply, Reply :: term(), NewState :: any(), actions()}
+    | {noreply, NewState :: any()}
+    | {noreply, NewState :: any(), {continue, Continue :: term()}}
+    | {noreply, NewState :: any(), actions()}
+    | {stop, Reason :: any(), NewState :: any()}
+    | {stop, Reason :: any(), NewState :: any(), actions()}.
 
 -type handle_cast_result() ::
-    {noreply, NewState :: any()} |
-    {noreply, NewState :: any(), {continue, Continue :: term()}} |
-    {noreply, NewState :: any(), libp2p_stream:actions()} |
-    {stop, Reason :: any(), NewState :: any()} |
-    {stop, Reason :: any(), NewState :: any(), actions()}.
+    {noreply, NewState :: any()}
+    | {noreply, NewState :: any(), {continue, Continue :: term()}}
+    | {noreply, NewState :: any(), libp2p_stream:actions()}
+    | {stop, Reason :: any(), NewState :: any()}
+    | {stop, Reason :: any(), NewState :: any(), actions()}.
 
 -type handle_info_result() ::
-    {noreply, NewState :: any()} |
-    {noreply, NewState :: any(), {continue, Continue :: term()}} |
-    {noreply, NewState :: any(), actions()} |
-    {stop, Reason :: any(), NewState :: any()} |
-    {stop, Reason :: any(), NewState :: any(), actions()}.
+    {noreply, NewState :: any()}
+    | {noreply, NewState :: any(), {continue, Continue :: term()}}
+    | {noreply, NewState :: any(), actions()}
+    | {stop, Reason :: any(), NewState :: any()}
+    | {stop, Reason :: any(), NewState :: any(), actions()}.
 
 -type handle_continue_result() :: handle_info_result().
 -type handle_packet_result() :: handle_info_result().
 -type handle_action_result() ::
-    {ok, NewState :: any()} |
-    {action, action(), NewState :: any()} |
-    {replace, actions(), NewState :: any()}.
+    {ok, NewState :: any()}
+    | {action, action(), NewState :: any()}
+    | {replace, actions(), NewState :: any()}.
 
 -export_type([
     init_result/0,
@@ -129,8 +129,8 @@ command(Pid, Cmd) ->
 %%
 
 -spec init({atom(), libp2p_stream:kind(), Opts :: map()}) ->
-    {stop, Reason :: any()} |
-    {ok, #state{}}.
+    {stop, Reason :: any()}
+    | {ok, #state{}}.
 init({Mod, Kind, Opts}) ->
     libp2p_stream_md:update({stack, [{Mod, Kind}]}),
     State = #state{mod = Mod, mod_state = undefined},
@@ -149,18 +149,18 @@ handle_init_result({stop, Reason, ModState, Actions}, State = #state{}) ->
     {stop, Reason}.
 
 -spec handle_call(Cmd :: term(), From :: term(), #state{}) ->
-    {reply, any(), #state{}} |
-    {noreply, #state{}}.
+    {reply, any(), #state{}}
+    | {noreply, #state{}}.
 handle_call(Cmd, From, State = #state{mod = Mod}) ->
     Result = Mod:handle_call(Cmd, From, State#state.mod_state),
     handle_call_result(Result, State).
 
 -spec handle_call_result(handle_call_result(), #state{}) ->
-    {reply, Reply :: term(), #state{}} |
-    {reply, Reply :: term(), #state{}, {continue, Continue :: term()}} |
-    {noreply, #state{}} |
-    {noreply, #state{}, {continue, Continue :: term()}} |
-    {stop, Reason :: term(), #state{}}.
+    {reply, Reply :: term(), #state{}}
+    | {reply, Reply :: term(), #state{}, {continue, Continue :: term()}}
+    | {noreply, #state{}}
+    | {noreply, #state{}, {continue, Continue :: term()}}
+    | {stop, Reason :: term(), #state{}}.
 handle_call_result({reply, Reply, ModState, {continue, Continue}}, State = #state{}) ->
     {reply, Reply, State#state{mod_state = ModState}, {continue, Continue}};
 handle_call_result({reply, Reply, ModState}, State = #state{}) ->
@@ -179,8 +179,8 @@ handle_call_result({stop, Reason, ModState, Actions}, State = #state{}) ->
     {stop, Reason, handle_actions(Actions, State#state{mod_state = ModState})}.
 
 -spec handle_cast(Msg :: term(), State :: #state{}) ->
-    {noreply, #state{}} |
-    {stop, Reason :: term(), #state{}}.
+    {noreply, #state{}}
+    | {stop, Reason :: term(), #state{}}.
 handle_cast(Msg, State = #state{mod = Mod}) ->
     case erlang:function_exported(Mod, handle_cast, 2) of
         true ->
@@ -192,9 +192,9 @@ handle_cast(Msg, State = #state{mod = Mod}) ->
     end.
 
 -spec handle_cast_result(handle_cast_result(), #state{}) ->
-    {noreply, #state{}} |
-    {noreply, #state{}, {continue, Continue :: term()}} |
-    {stop, Reason :: term(), #state{}}.
+    {noreply, #state{}}
+    | {noreply, #state{}, {continue, Continue :: term()}}
+    | {stop, Reason :: term(), #state{}}.
 handle_cast_result({noreply, ModState, {continue, Continue}}, State = #state{}) ->
     {noreply, State#state{mod_state = ModState}, {continue, Continue}};
 handle_cast_result({noreply, ModState}, State = #state{}) ->
@@ -207,9 +207,9 @@ handle_cast_result({stop, Reason, ModState, Actions}, State = #state{}) ->
     {stop, Reason, handle_actions(Actions, State#state{mod_state = ModState})}.
 
 -spec handle_info(Msg :: term(), State :: #state{}) ->
-    {noreply, #state{}} |
-    {noreply, #state{}, {continue, Continue :: term()}} |
-    {stop, Reason :: term(), #state{}}.
+    {noreply, #state{}}
+    | {noreply, #state{}, {continue, Continue :: term()}}
+    | {stop, Reason :: term(), #state{}}.
 handle_info({timeout, Key}, State = #state{timers = Timers, mod = Mod}) ->
     case maps:take(Key, Timers) of
         error ->
@@ -227,9 +227,9 @@ handle_info(Msg, State = #state{mod = Mod, mod_state = ModState}) ->
     handle_info_result(Result, State).
 
 -spec handle_info_result(handle_info_result(), #state{}) ->
-    {noreply, #state{}} |
-    {noreply, #state{}, {continue, Continue :: term()}} |
-    {stop, Reason :: term(), #state{}}.
+    {noreply, #state{}}
+    | {noreply, #state{}, {continue, Continue :: term()}}
+    | {stop, Reason :: term(), #state{}}.
 handle_info_result({noreply, ModState, {continue, Continue}}, State = #state{}) ->
     {noreply, State#state{mod_state = ModState}, {continue, Continue}};
 handle_info_result({noreply, ModState}, State = #state{}) ->
@@ -267,9 +267,9 @@ terminate(Reason, State = #state{mod = Mod}) ->
     end.
 
 -spec dispatch_packets(#state{}) ->
-    {noreply, #state{}} |
-    {noreply, #state{}, {continue, term()}} |
-    {stop, term(), #state{}}.
+    {noreply, #state{}}
+    | {noreply, #state{}, {continue, term()}}
+    | {stop, term(), #state{}}.
 dispatch_packets(State = #state{data = <<>>}) ->
     {noreply, State};
 dispatch_packets(State = #state{active = false}) ->
