@@ -8,6 +8,7 @@ all() ->
      ls_test,
      negotiate_server_test,
      negotiate_client_test,
+     handshake_timeout_test,
      negotiate_timeout_test,
      handshake_server_mismatch_test,
      handshake_client_mismatch_test,
@@ -23,11 +24,16 @@ init_per_testcase(negotiate_client_fail_test, Config) ->
     init_client_test_common(Config, #{});
 init_per_testcase(negotiate_client_mismatch_test, Config) ->
     init_client_test_common(Config, #{});
+init_per_testcase(handshake_timeout_test, Config) ->
+    test_util:setup(),
+    meck_stream(server, test_stream),
+    init_test_stream(server, test_util:setup_sock_pair(Config),
+                     #{ negotiation_timeout => 1000 });
 init_per_testcase(negotiate_timeout_test, Config) ->
     test_util:setup(),
     meck_stream(server, test_stream),
     init_test_stream(server, test_util:setup_sock_pair(Config),
-                     #{ negotiation_timeout => 300 });
+                     #{ negotiation_timeout => 1000 });
 init_per_testcase(_, Config) ->
     test_util:setup(),
     meck_stream(server, test_stream),
@@ -131,12 +137,26 @@ handshake_client_reverse_test(Config) ->
 %% Negative tests
 %%
 
-negotiate_timeout_test(Config) ->
+handshake_timeout_test(Config) ->
     {CSock, _SSock} = ?config(client_server, Config),
     Pid = ?config(stream, Config),
-    %% send handshake from client to server, server wont respond forcing a timeout
+    %% send handshake from client to server,
+    %% server wont respond forcing a timeout while both sides are in handshake state
     %% which will result in the stream being closed
     send_line(CSock, libp2p_stream_multistream:protocol_id()),
+    %% Negotation time is set short for this
+    ?assert(test_util:pid_should_die(Pid)),
+    ok.
+
+negotiate_timeout_test(Config) ->
+    {CSock, SSock} = ?config(client_server, Config),
+    Pid = ?config(stream, Config),
+    %% send handshake from client to server,
+    send_line(CSock, libp2p_stream_multistream:protocol_id()),
+    %% send handshake from server to client,
+    send_line(SSock, libp2p_stream_multistream:protocol_id()),
+    %% no side negotiates, so we will end up with both sides giving up
+    %% while both sides are in negotiate state
     %% Negotation time is set short for this
     ?assert(test_util:pid_should_die(Pid)),
     ok.

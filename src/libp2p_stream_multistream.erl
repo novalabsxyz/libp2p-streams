@@ -13,17 +13,16 @@
     {packet, Packet :: binary()} | {command, Cnd :: any()} | {error, Error :: term()}.
 
 -type fsm_result() ::
-    {keep_state, Data :: any()} |
-    {keep_state, Data :: any(), libp2p_stream:actions()} |
-    {next_state, State :: atom(), Data :: any()} |
-    {next_state, State :: atom(), Data :: any(), libp2p_stream:actions()} |
-    {stop, Reason :: term(), Data :: any()}.
+    {keep_state, Data :: any()}
+    | {keep_state, Data :: any(), libp2p_stream:actions()}
+    | {next_state, State :: atom(), Data :: any()}
+    | {next_state, State :: atom(), Data :: any(), libp2p_stream:actions()}
+    | {stop, Reason :: term(), Data :: any()}.
 
 -record(state, {
     handlers :: handlers(),
     fsm_state :: atom(),
-    selected_handler = 1 :: pos_integer(),
-    negotiation_timeout :: pos_integer()
+    selected_handler = 1 :: pos_integer()
 }).
 
 -define(PROTOCOL, "/multistream/1.0.0").
@@ -48,27 +47,22 @@ init(Kind, Opts = #{handler_fn := HandlerFun}) ->
 init(server, Opts = #{handlers := Handlers}) when is_list(Handlers), length(Handlers) > 0 ->
     lager:debug("init server multistream with handlers ~p", [Handlers]),
     NegotiationTime = maps:get(negotiation_timeout, Opts, ?DEFAULT_NEGOTIATION_TIME),
-    {ok, #state{fsm_state = handshake, handlers = Handlers,
-                negotiation_timeout = NegotiationTime},
-        [
-            {packet_spec, [varint]},
-            {active, once},
-            {send, encode_line(<<?PROTOCOL>>)},
-            {timer, negotiate_timeout, NegotiationTime}
-        ]};
+    {ok, #state{fsm_state = handshake, handlers = Handlers}, [
+        {packet_spec, [varint]},
+        {active, once},
+        {send, encode_line(<<?PROTOCOL>>)},
+        {timer, negotiate_timeout, NegotiationTime}
+    ]};
 init(client, Opts = #{handlers := Handlers}) when is_list(Handlers), length(Handlers) > 0 ->
     lager:debug("init client multistream with handlers ~p", [Handlers]),
     NegotiationTime = maps:get(negotiation_timeout, Opts, ?DEFAULT_NEGOTIATION_TIME),
-    HandshakeTime = maps:get(handshake_timeout, Opts, rand:uniform(20000) + 15000),
-    {ok, #state{fsm_state = handshake, handlers = Handlers,
-                negotiation_timeout = NegotiationTime},
-        [
-            {packet_spec, [varint]},
-            {active, once},
-            %% have client/initiator kick things off by sending the initial multistream handshake
-            {send, encode_line(<<?PROTOCOL>>)},
-            {timer, handshake_timeout, HandshakeTime}
-        ]};
+    {ok, #state{fsm_state = handshake, handlers = Handlers}, [
+        {packet_spec, [varint]},
+        {active, once},
+        %% have client/initiator kick things off by sending the initial multistream handshake
+        {send, encode_line(<<?PROTOCOL>>)},
+        {timer, negotiate_timeout, NegotiationTime}
+    ]};
 init(_, _) ->
     {stop, missing_handlers}.
 
@@ -85,25 +79,22 @@ handshake(client, {packet, Packet}, Data = #state{handlers = Handlers}) ->
             {Key, _} = select_handler(1, Data),
             lager:debug("Client negotiating handler using: ~p", [[K || {K, _} <- Handlers]]),
             {next_state, negotiate, Data#state{selected_handler = 1}, [
-                {cancel_timer, handshake_timeout},
                 {active, once},
                 {send, encode_line(Key)}
             ]};
         Other ->
             handshake(client, {error, {handshake_mismatch, Other}}, Data)
     end;
-handshake(client, {timeout, handshake_timeout}, Data = #state{}) ->
-    %% The client failed to receive a handshake from the server after all retries
-    handshake(client, {error, handshake_timeout}, Data);
-
 handshake(server, {packet, Packet}, Data = #state{}) ->
     case binary_to_line(Packet) of
         <<?PROTOCOL>> ->
-            {next_state, negotiate,
-                Data, [{active, once}]};
+            {next_state, negotiate, Data, [{active, once}]};
         Other ->
             handshake(server, {error, {handshake_mismatch, Other}}, Data)
     end;
+handshake(Kind, {timeout, negotiate_timeout}, Data = #state{}) ->
+    %% failed to complete negotiation in allotted time, stopping
+    handshake(Kind, {error, negotiate_timeout}, Data);
 handshake(Kind, {error, Error}, Data = #state{}) ->
     lager:notice("~p handshake failed: ~p", [Kind, Error]),
     {stop, normal, Data};
@@ -132,7 +123,7 @@ negotiate(client, {packet, Packet}, Data = #state{}) ->
             case select_handler(Data#state.selected_handler, Data) of
                 {Key, {M, A}} when Key == Line ->
                     lager:debug("Client negotiated handler for: ~p, handler: ~p", [Line, M]),
-                    {keep_state, Data, [{swap, M, A}]};
+                    {keep_state, Data, [{cancel_timer, negotiate_timeout}, {swap, M, A}]};
                 _ ->
                     negotiate(client, {error, {unexpected_server_response, Line}}, Data)
             end
@@ -161,6 +152,9 @@ negotiate(server, {packet, Packet}, Data = #state{}) ->
                     ]}
             end
     end;
+negotiate(Kind, {timeout, negotiate_timeout}, Data = #state{}) ->
+    %% failed to complete negotiation in allotted time, stopping
+    handshake(Kind, {error, negotiate_timeout}, Data);
 negotiate(Kind, {error, Error}, Data = #state{}) ->
     lager:notice("~p negotiation failed: ~p", [Kind, Error]),
     %% Stop quietly after noticing the failure

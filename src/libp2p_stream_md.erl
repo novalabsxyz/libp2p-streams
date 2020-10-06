@@ -5,12 +5,12 @@
 -type stack_kind() :: client | server.
 -type md_entry() ::
     {stack,
-        [{Mod :: atom(), Kind :: stack_kind()}] |
-        {Mod :: atom(), Kind :: stack_kind()} |
-        {OldMod :: atom(), {Mod :: atom(), Kind :: stack_kind()}}} |
-    {addr_info, {Local :: string(), Remote :: string()}} |
-    {muxer, pid()} |
-    {identify, libp2p_identify:identify()}.
+        [{Mod :: atom(), Kind :: stack_kind()}]
+        | {Mod :: atom(), Kind :: stack_kind()}
+        | {OldMod :: atom(), {Mod :: atom(), Kind :: stack_kind()}}}
+    | {addr_info, {Local :: string(), Remote :: string()}}
+    | {muxer, pid()}
+    | {identify, libp2p_identify:identify()}.
 
 -type md() :: [md_entry()].
 

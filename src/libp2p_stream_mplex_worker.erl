@@ -116,8 +116,8 @@ handle_call(Cmd, From, State = #state{mod = Mod, mod_state = ModState}) ->
     end.
 
 -spec handle_command_result(libp2p_stream:handle_command_result(), #state{}) ->
-    {reply, any(), #state{}, libp2p_stream:action()} |
-    {noreply, #state{}, libp2p_stream:actions()}.
+    {reply, any(), #state{}, libp2p_stream:action()}
+    | {noreply, #state{}, libp2p_stream:actions()}.
 handle_command_result({reply, Reply, ModState}, State = #state{}) ->
     handle_command_result({reply, Reply, ModState, []}, State);
 handle_command_result({reply, Reply, ModState, Actions}, State = #state{}) ->
@@ -180,7 +180,13 @@ handle_info(Msg, State = #state{mod = Mod, stream_id = _StreamId}) ->
     end.
 
 handle_packet(Header, Packet, State = #state{mod = Mod, stream_id = _StreamId}) ->
-    lager:debug("~p handling packet for stream id ~p, header ~p, packet ~p ~p", [Mod, _StreamId, Header, Packet, Packet]),
+    lager:debug("~p handling packet for stream id ~p, header ~p, packet ~p ~p", [
+        Mod,
+        _StreamId,
+        Header,
+        Packet,
+        Packet
+    ]),
     Active =
         case State#state.active of
             once -> false;

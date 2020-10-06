@@ -127,7 +127,11 @@ handle_packet(
             false ->
                 {noreply, State, [{active, once}]};
             WorkerPid ->
-                lager:debug("handling packet for worker, kind ~p, streamid ~p, pid ~p", [Kind, StreamID, WorkerPid]),
+                lager:debug("handling packet for worker, kind ~p, streamid ~p, pid ~p", [
+                    Kind,
+                    StreamID,
+                    WorkerPid
+                ]),
                 Fun(WorkerPid),
                 {noreply, State, [{active, once}]}
         end

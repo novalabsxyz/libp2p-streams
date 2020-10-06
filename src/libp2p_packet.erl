@@ -33,8 +33,8 @@ encode_packet(Spec, Header, Data) ->
     <<BinHeader/binary, Data/binary>>.
 
 -spec decode_packet(spec(), binary()) ->
-    {ok, Header :: header(), Data :: binary(), Tail :: binary()} |
-    {more, Expected :: pos_integer()}.
+    {ok, Header :: header(), Data :: binary(), Tail :: binary()}
+    | {more, Expected :: pos_integer()}.
 decode_packet(Spec, Bin) ->
     case decode_header(Spec, Bin) of
         {ok, Header, Tail} ->
@@ -63,7 +63,7 @@ decode_packet(Spec, Bin) ->
 encode_header([], [], Acc) ->
     Acc;
 %% when the size tuple is specified as the packet spec, we ignore the associated Header value
-encode_header([{size, _BinSize} | SpecTail], [_V | HeaderTail], Acc)  when _BinSize > 0->
+encode_header([{size, _BinSize} | SpecTail], [_V | HeaderTail], Acc) when _BinSize > 0 ->
     encode_header(SpecTail, HeaderTail, <<Acc/binary>>);
 encode_header([u8 | SpecTail], [V | HeaderTail], Acc) when V >= 0, V < 256 ->
     encode_header(SpecTail, HeaderTail, <<Acc/binary, V:8/unsigned-integer>>);
@@ -181,7 +181,5 @@ encode_test() ->
     ?assertError(header_length, encode_packet([], [], <<>>)),
     ?assertError(header_length, encode_packet([u8], [], <<"data">>)),
     ok.
-
-
 
 -endif.
