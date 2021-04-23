@@ -1,3 +1,5 @@
+This repo has been archived, is not maintained, and should not be used in future projects.
+
 # libp2p-streams
 
 [![Build status](https://badge.buildkite.com/6ced561361ba13b11812574e030a35d7092df5ffac4aca035e.svg)](https://buildkite.com/helium/libp2p-streams)
